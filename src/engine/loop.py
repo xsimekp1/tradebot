@@ -123,14 +123,15 @@ async def run_intraday_loop():
             # 5. Execute trade logic
             order_id = None
             current_price = float(bars["close"].iloc[-1])
+            position_usd = get_account()["equity"] * 0.05  # 5% of current equity
 
             if score > threshold and current_side != "long" and open_trade_id is None:
                 if current_side == "short":
                     close_position(symbol)
-                print(f"{Fore.GREEN}[loop] Opening LONG (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
-                order_id = open_long(symbol, score)
+                print(f"{Fore.GREEN}[loop] Opening LONG ${position_usd:.0f} (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
+                order_id = open_long(symbol, score, position_usd)
                 if order_id:
-                    qty = settings.POSITION_SIZE_USD / current_price
+                    qty = position_usd / current_price
                     open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
 
             elif score < -threshold and open_trade_id is not None and current_side == "long":
@@ -141,10 +142,10 @@ async def run_intraday_loop():
                 print(f"{Fore.YELLOW}[loop] Closing LONG, score={score:+.3f} < {-threshold:.3f}{Style.RESET_ALL}")
                 close_position(symbol)
                 if settings.ASSET_CLASS != "crypto":
-                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f}){Style.RESET_ALL}")
-                    order_id = open_short(symbol, score)
+                    print(f"{Fore.RED}[loop] Opening SHORT ${position_usd:.0f} (score={score:+.3f}){Style.RESET_ALL}")
+                    order_id = open_short(symbol, score, position_usd)
                     if order_id:
-                        qty = settings.POSITION_SIZE_USD / current_price
+                        qty = position_usd / current_price
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
 
             # 6. Write signals and equity to DB

@@ -47,13 +47,13 @@ def close_position(symbol: str) -> str | None:
         return None
 
 
-def open_long(symbol: str, score: float) -> str | None:
-    """Open a long (buy) position sized by POSITION_SIZE_USD. Returns order ID or None."""
+def open_long(symbol: str, score: float, notional: float | None = None) -> str | None:
+    """Open a long (buy) position. Returns order ID or None."""
     client = get_trading_client()
     try:
         request = MarketOrderRequest(
             symbol=symbol,
-            notional=settings.POSITION_SIZE_USD,
+            notional=notional or settings.POSITION_SIZE_USD,
             side=OrderSide.BUY,
             time_in_force=_tif(),
         )
@@ -64,13 +64,13 @@ def open_long(symbol: str, score: float) -> str | None:
         return None
 
 
-def open_short(symbol: str, score: float) -> str | None:
-    """Open a short (sell) position sized by POSITION_SIZE_USD. Returns order ID or None."""
+def open_short(symbol: str, score: float, notional: float | None = None) -> str | None:
+    """Open a short (sell) position. Returns order ID or None."""
     client = get_trading_client()
     try:
         request = MarketOrderRequest(
             symbol=symbol,
-            notional=settings.POSITION_SIZE_USD,
+            notional=notional or settings.POSITION_SIZE_USD,
             side=OrderSide.SELL,
             time_in_force=_tif(),
         )
