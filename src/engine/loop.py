@@ -85,11 +85,8 @@ async def run_intraday_loop():
             order_id = None
             current_price = float(bars["close"].iloc[-1])
 
-            if score > threshold and current_side != "long":
-                if current_side == "short" and open_trade_id:
-                    pnl = (position["avg_entry_price"] - current_price) * position["qty"]
-                    await write_trade_close(open_trade_id, current_price, pnl, now)
-                    open_trade_id = None
+            if score > threshold and current_side != "long" and open_trade_id is None:
+                if current_side == "short":
                     close_position(symbol)
                 print(f"{Fore.GREEN}[loop] Opening LONG (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
                 order_id = open_long(symbol, score)
@@ -97,21 +94,15 @@ async def run_intraday_loop():
                     qty = settings.POSITION_SIZE_USD / current_price
                     open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
 
-            elif score < -threshold and current_side != "short":
-                if settings.ASSET_CLASS == "crypto":
-                    if current_side == "long" and open_trade_id:
-                        pnl = (current_price - position["avg_entry_price"]) * position["qty"]
-                        await write_trade_close(open_trade_id, current_price, pnl, now)
-                        open_trade_id = None
-                        print(f"{Fore.YELLOW}[loop] Score bearish, closing long (no crypto shorts){Style.RESET_ALL}")
-                        close_position(symbol)
-                else:
-                    if current_side == "long" and open_trade_id:
-                        pnl = (current_price - position["avg_entry_price"]) * position["qty"]
-                        await write_trade_close(open_trade_id, current_price, pnl, now)
-                        open_trade_id = None
-                        close_position(symbol)
-                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f} < {-threshold:.3f}){Style.RESET_ALL}")
+            elif score < -threshold and open_trade_id is not None and current_side == "long":
+                # Close long on bearish signal
+                pnl = (current_price - position["avg_entry_price"]) * position["qty"] if position else 0.0
+                await write_trade_close(open_trade_id, current_price, pnl, now)
+                open_trade_id = None
+                print(f"{Fore.YELLOW}[loop] Closing LONG, score={score:+.3f} < {-threshold:.3f}{Style.RESET_ALL}")
+                close_position(symbol)
+                if settings.ASSET_CLASS != "crypto":
+                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f}){Style.RESET_ALL}")
                     order_id = open_short(symbol, score)
                     if order_id:
                         qty = settings.POSITION_SIZE_USD / current_price
