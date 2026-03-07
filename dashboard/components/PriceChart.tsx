@@ -32,9 +32,9 @@ type TrendLine = {
 };
 
 // Find support/resistance levels with strength (number of touches)
-function findTrendLines(closes: number[], tolerance: number = 0.002): TrendLine[] {
+function findTrendLines(closes: number[], tolerance: number = 0.005): TrendLine[] {
   const levels: { price: number; type: "support" | "resistance"; touches: number }[] = [];
-  const lookback = 5;
+  const lookback = 3; // Shorter window for faster detection
 
   // Find pivot points
   for (let i = lookback; i < closes.length - lookback; i++) {
@@ -76,9 +76,9 @@ function findTrendLines(closes: number[], tolerance: number = 0.002): TrendLine[
 
   // Sort by strength and return top levels
   return levels
-    .filter((l) => l.touches >= 2) // Only levels with 2+ touches
+    .filter((l) => l.touches >= 1) // Include all pivot levels
     .sort((a, b) => b.touches - a.touches)
-    .slice(0, 6) // Max 6 lines total
+    .slice(0, 8) // Max 8 lines total
     .map((l) => ({
       level: l.price,
       strength: Math.min(l.touches, 5), // Strength 1-5
