@@ -3,6 +3,7 @@ Online strategy evolution — core logic.
 Imported by both scripts/evolve_online.py (CLI) and main.py (Railway scheduler).
 """
 import json
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -236,7 +237,7 @@ def mutate_threshold(threshold: float, sigma: float) -> float:
 
 # ── Evolution cycle ───────────────────────────────────────────────────────────
 
-def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None:
+def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     current_weights, version, current_threshold = load_active_weights()
 
     # Integrate any new signals added since last saved version
@@ -251,6 +252,8 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
     if total > 0:
         current_weights = {k: v / total for k, v in current_weights.items()}
 
+    evolution_start = time.time()
+
     print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}, threshold={current_threshold:.3f}){Style.RESET_ALL}")
     top = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
@@ -262,8 +265,11 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
         return
 
     print("  Computing signal matrices...")
+    signal_start = time.time()
     mat_train = compute_signal_matrix(df_train, "Train ")
     mat_test = compute_signal_matrix(df_test, "Test  ")
+    signal_duration = time.time() - signal_start
+    print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
     current_arr = np.array([current_weights.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
     current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold)
@@ -287,8 +293,11 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
               f"{o['sharpe']:>7.2f} {o['win_rate']:>6.1f}% {o['num_trades']:>7}{star}")
 
     best = candidates[0]
+    evolution_duration = time.time() - evolution_start
+
     if best["label"] == "current":
         print(f"\n  {Fore.YELLOW}Current strategy is best — no update.{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")
         return
 
     best_thr = best["threshold"]
@@ -299,7 +308,9 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
         new_version,
         {"in_sample": is_stats, "out_of_sample": best["oos"],
          "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma,
-         "threshold": best_thr},
+         "threshold": best_thr,
+         "evolution_duration_sec": round(evolution_duration, 1),
+         "signal_computation_sec": round(signal_duration, 1)},
         best_thr,
     )
 
@@ -315,3 +326,4 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
     thr_delta = best_thr - current_threshold
     thr_col = Fore.GREEN if thr_delta > 0 else Fore.RED if thr_delta < 0 else Style.RESET_ALL
     print(f"  {'_threshold':<12} {current_threshold:>7.4f} {best_thr:>7.4f} {thr_col}{thr_delta:>+7.4f}{Style.RESET_ALL}")
+    print(f"\n  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")

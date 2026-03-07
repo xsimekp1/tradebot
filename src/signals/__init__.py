@@ -5,6 +5,7 @@ from src.signals.vwap import VWAPSignal
 from src.signals.atr import ATRSignal
 from src.signals.volume import VolumeSignal
 from src.signals.breakout import BreakoutSignal
+from src.signals.channel import ChannelPositionSignal, ChannelSlopeSignal
 
 ALL_SIGNALS = [
     MomentumSignal(),
@@ -14,9 +15,12 @@ ALL_SIGNALS = [
     ATRSignal(),
     VolumeSignal(),
     BreakoutSignal(),
+    ChannelPositionSignal(),
+    ChannelSlopeSignal(),
 ]
 
 __all__ = [
     "MomentumSignal", "RSISignal", "BollingerSignal", "VWAPSignal",
-    "ATRSignal", "VolumeSignal", "BreakoutSignal", "ALL_SIGNALS",
+    "ATRSignal", "VolumeSignal", "BreakoutSignal",
+    "ChannelPositionSignal", "ChannelSlopeSignal", "ALL_SIGNALS",
 ]

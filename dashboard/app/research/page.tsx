@@ -70,6 +70,43 @@ export default function ResearchPage() {
         </div>
       </div>
 
+      {/* Last evolution timing */}
+      {activeWeights?.performance && (
+        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Last Evolution</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-gray-500 text-xs uppercase">Total Duration</p>
+              <p className="text-white font-medium">
+                {(activeWeights.performance as Record<string, number>).evolution_duration_sec != null
+                  ? `${(activeWeights.performance as Record<string, number>).evolution_duration_sec}s`
+                  : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs uppercase">Signal Computation</p>
+              <p className="text-white font-medium">
+                {(activeWeights.performance as Record<string, number>).signal_computation_sec != null
+                  ? `${(activeWeights.performance as Record<string, number>).signal_computation_sec}s`
+                  : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs uppercase">Mutations Tried</p>
+              <p className="text-white font-medium">
+                {(activeWeights.performance as Record<string, number>).mutations_tried ?? "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs uppercase">Evolved At</p>
+              <p className="text-white font-medium">
+                {new Date(activeWeights.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Evolution performance chart */}
       {weightHistory.length > 0 && (
         <div className="space-y-4">
