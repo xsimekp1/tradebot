@@ -6,6 +6,7 @@ from src.db.session import AsyncSessionLocal
 from src.engine.scoring import DEFAULT_WEIGHTS
 from src.models.equity import EquityCurve
 from src.models.signal import TradingSignal
+from src.models.trade import Trade
 from src.models.weights import SignalWeights
 
 
@@ -51,6 +52,44 @@ async def write_signals(
                 timestamp=timestamp,
             )
             db.add(row)
+        await db.commit()
+
+
+async def write_trade_open(
+    symbol: str, side: str, qty: float, entry_price: float, score: float,
+    order_id: str | None, timestamp: datetime
+) -> str:
+    """Insert an open trade row, return the DB trade id."""
+    import uuid
+    trade_id = uuid.uuid4()
+    async with AsyncSessionLocal() as db:
+        trade = Trade(
+            id=trade_id,
+            symbol=symbol,
+            side=side,
+            quantity=round(qty, 8),
+            entry_price=round(entry_price, 8),
+            score=round(score, 6),
+            alpaca_order_id=order_id,
+            opened_at=timestamp,
+        )
+        db.add(trade)
+        await db.commit()
+    return str(trade_id)
+
+
+async def write_trade_close(
+    trade_id: str, exit_price: float, pnl: float, timestamp: datetime
+) -> None:
+    """Update an open trade row with exit info."""
+    from sqlalchemy import update
+    from src.models.trade import Trade as TradeModel
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(TradeModel)
+            .where(TradeModel.id == trade_id)
+            .values(exit_price=round(exit_price, 8), pnl=round(pnl, 8), closed_at=timestamp)
+        )
         await db.commit()
 
 

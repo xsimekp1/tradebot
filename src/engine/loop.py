@@ -15,7 +15,7 @@ from src.engine.executor import (
 )
 from src.engine.scoring import compute_score
 from src.signals import ALL_SIGNALS
-from src.writer import write_signals, write_equity, load_active_weights
+from src.writer import write_signals, write_equity, write_trade_open, write_trade_close, load_active_weights
 
 colorama_init(autoreset=True)
 
@@ -38,6 +38,8 @@ def is_market_open() -> bool:
 async def run_intraday_loop():
     symbol = settings.SYMBOL
     print(f"{Fore.CYAN}[loop] Starting intraday loop for {symbol}{Style.RESET_ALL}")
+
+    open_trade_id: str | None = None  # DB id of current open trade
 
     while True:
         iteration_start = time.time()
@@ -81,25 +83,39 @@ async def run_intraday_loop():
 
             # 5. Execute trade logic
             order_id = None
+            current_price = float(bars["close"].iloc[-1])
+
             if score > threshold and current_side != "long":
-                if current_side == "short":
-                    print(f"{Fore.YELLOW}[loop] Closing short{Style.RESET_ALL}")
+                if current_side == "short" and open_trade_id:
+                    pnl = (position["avg_entry_price"] - current_price) * position["qty"]
+                    await write_trade_close(open_trade_id, current_price, pnl, now)
+                    open_trade_id = None
                     close_position(symbol)
                 print(f"{Fore.GREEN}[loop] Opening LONG (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
                 order_id = open_long(symbol, score)
+                if order_id:
+                    qty = settings.POSITION_SIZE_USD / current_price
+                    open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
 
             elif score < -threshold and current_side != "short":
                 if settings.ASSET_CLASS == "crypto":
-                    # Crypto: no short selling — just close long if held
-                    if current_side == "long":
+                    if current_side == "long" and open_trade_id:
+                        pnl = (current_price - position["avg_entry_price"]) * position["qty"]
+                        await write_trade_close(open_trade_id, current_price, pnl, now)
+                        open_trade_id = None
                         print(f"{Fore.YELLOW}[loop] Score bearish, closing long (no crypto shorts){Style.RESET_ALL}")
                         close_position(symbol)
                 else:
-                    if current_side == "long":
-                        print(f"{Fore.YELLOW}[loop] Closing long{Style.RESET_ALL}")
+                    if current_side == "long" and open_trade_id:
+                        pnl = (current_price - position["avg_entry_price"]) * position["qty"]
+                        await write_trade_close(open_trade_id, current_price, pnl, now)
+                        open_trade_id = None
                         close_position(symbol)
                     print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f} < {-threshold:.3f}){Style.RESET_ALL}")
                     order_id = open_short(symbol, score)
+                    if order_id:
+                        qty = settings.POSITION_SIZE_USD / current_price
+                        open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
 
             # 6. Write signals and equity to DB
             await write_signals(symbol, signal_values, weights, score, now)
