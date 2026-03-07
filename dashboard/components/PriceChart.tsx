@@ -39,15 +39,22 @@ export function PriceChart({ prices, trades }: Props) {
 
   const openTrades = trades.filter((t) => !t.closed_at && Number(t.entry_price) > 0);
 
-  // Collect buy/sell markers: { time (ms), price }
+  // Snap a timestamp to nearest candle and return { time, price=close }
+  const snapClose = (ms: number) =>
+    prices.reduce((a, b) => (Math.abs(b.time - ms) < Math.abs(a.time - ms) ? b : a));
+
+  // Collect buy/sell markers snapped to nearest candle close
   const buyMarkers: { time: number; price: number }[] = [];
   const sellMarkers: { time: number; price: number }[] = [];
 
   trades.forEach((t) => {
-    const openMs = new Date(t.opened_at).getTime();
-    if (Number(t.entry_price) > 0) buyMarkers.push({ time: openMs, price: Number(t.entry_price) });
+    if (Number(t.entry_price) > 0) {
+      const c = snapClose(new Date(t.opened_at).getTime());
+      buyMarkers.push({ time: c.time, price: c.close });
+    }
     if (t.closed_at && t.exit_price && Number(t.exit_price) > 0) {
-      sellMarkers.push({ time: new Date(t.closed_at).getTime(), price: Number(t.exit_price) });
+      const c = snapClose(new Date(t.closed_at).getTime());
+      sellMarkers.push({ time: c.time, price: c.close });
     }
   });
 
