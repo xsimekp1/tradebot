@@ -9,6 +9,7 @@ import { WeightsBar } from "@/components/WeightsBar";
 import { StatusBar } from "@/components/StatusBar";
 import { WeightHistoryChart } from "@/components/WeightHistoryChart";
 import { ThresholdHistoryChart } from "@/components/ThresholdHistoryChart";
+import { PriceChart } from "@/components/PriceChart";
 import { ScoreGauge } from "@/components/ScoreGauge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -17,6 +18,7 @@ const REFRESH = 30_000;
 export default function Dashboard() {
   const { data: status } = useSWR("/api/status", fetcher, { refreshInterval: REFRESH });
   const { data: equity } = useSWR("/api/equity", fetcher, { refreshInterval: REFRESH });
+  const { data: priceData } = useSWR("/api/prices", fetcher, { refreshInterval: REFRESH });
   const { data: signals } = useSWR("/api/signals", fetcher, { refreshInterval: REFRESH });
   const { data: trades } = useSWR("/api/trades", fetcher, { refreshInterval: REFRESH });
   const { data: weights } = useSWR("/api/weights", fetcher, { refreshInterval: REFRESH });
@@ -65,6 +67,17 @@ export default function Dashboard() {
           value={status?.totalPnl != null ? `$${Number(status.totalPnl) >= 0 ? "+" : ""}${Number(status.totalPnl).toFixed(2)}` : "—"}
           positive={Number(status?.totalPnl ?? 0) >= 0}
           sub="all closed trades"
+        />
+      </div>
+
+      {/* Price chart */}
+      <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+        <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
+          BTC/USD · 5m  <span className="text-gray-600 font-normal normal-case">▲ buy &nbsp; ▼ sell &nbsp; — open position</span>
+        </h2>
+        <PriceChart
+          prices={priceData?.prices ?? []}
+          trades={priceData?.trades ?? []}
         />
       </div>
 

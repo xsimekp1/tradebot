@@ -5,6 +5,7 @@ import { WeightsComparison } from "@/components/WeightsComparison";
 import { WalkForwardChart } from "@/components/WalkForwardChart";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { SignalEvolutionGrid } from "@/components/SignalEvolutionGrid";
+import { ThresholdHistoryChart } from "@/components/ThresholdHistoryChart";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -76,63 +77,20 @@ export default function ResearchPage() {
         </div>
       )}
 
-      {/* Per-signal evolution sparklines */}
+      {/* Per-signal evolution sparklines + threshold history */}
       {weightHistory.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
             Signal Coefficient Evolution
           </h2>
           <SignalEvolutionGrid rows={weightHistory} />
-        </div>
-      )}
-
-      {/* Evolution history */}
-      {weightHistory.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
-            Strategy Evolution ({weightHistory.length} versions)
-          </h2>
-          <div className="space-y-3">
-            {weightHistory.map((row) => {
-              const oos = (row.performance as Record<string, Record<string, number>> | null)?.out_of_sample;
-              const sigma = (row.performance as Record<string, number> | null)?.sigma;
-              return (
-                <div
-                  key={row.id}
-                  className={`bg-[#1a1d27] rounded-xl border p-4 ${row.is_active ? "border-indigo-500/50" : "border-[#2a2d3a]"}`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <span className="text-sm font-semibold text-white">
-                        v{row.version}
-                      </span>
-                      {row.is_active && (
-                        <span className="ml-2 text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">active</span>
-                      )}
-                      <span className="ml-3 text-xs text-gray-500">
-                        {new Date(row.created_at).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      {sigma != null && (
-                        <span className="ml-2 text-xs text-gray-600">σ={sigma}</span>
-                      )}
-                    </div>
-                    {oos && (
-                      <div className="flex gap-4 text-xs font-mono">
-                        <span className={oos.return_pct >= 0 ? "text-green-400" : "text-red-400"}>
-                          {oos.return_pct >= 0 ? "+" : ""}{Number(oos.return_pct).toFixed(2)}% OOS
-                        </span>
-                        <span className="text-gray-400">Sharpe {Number(oos.sharpe).toFixed(2)}</span>
-                        <span className="text-gray-400">WR {Number(oos.win_rate).toFixed(1)}%</span>
-                      </div>
-                    )}
-                  </div>
-                  <WeightsComparison weights={row.weights} />
-                </div>
-              );
-            })}
+          <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Threshold History</h3>
+            <ThresholdHistoryChart rows={weightHistory} />
           </div>
         </div>
       )}
+
 
     </div>
   );
