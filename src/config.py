@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     ASSET_CLASS: str = "stock"
     SYMBOL: str = "SPY"
     LOOP_INTERVAL_SECONDS: int = 60
-    SCORE_LONG_THRESHOLD: float = 0.5
-    SCORE_SHORT_THRESHOLD: float = -0.5
+    SCORE_LONG_THRESHOLD: float = 0.15
+    SCORE_SHORT_THRESHOLD: float = -0.15
     POSITION_SIZE_USD: float = 1000.0
     # How many bars to fetch for signal computation
     BARS_LIMIT: int = 100
