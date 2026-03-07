@@ -337,6 +337,7 @@ def main():
     parser.add_argument("--optimize", action="store_true", help="Random search over weight combos")
     parser.add_argument("--trials", type=int, default=300, help="Number of optimization trials")
     parser.add_argument("--top", type=int, default=10, help="Show top N results")
+    parser.add_argument("--save", action="store_true", help="Save results to DB (visible on dashboard)")
     args = parser.parse_args()
 
     # Select signals
@@ -358,7 +359,7 @@ def main():
     matrix = compute_signal_matrix(df, signal_objects)
 
     if args.optimize:
-        optimize(
+        top_results = optimize(
             df, matrix, signal_names, signal_objects,
             trials=args.trials,
             long_thr=args.long_threshold,
@@ -367,6 +368,20 @@ def main():
             allow_short=allow_short,
             top_n=args.top,
         )
+        if args.save and top_results:
+            from src.db.backtest_writer import save_backtest
+            best = top_results[0]
+            best_w = best["weights"]
+            best_r = best["stats"]
+            save_backtest({
+                "symbol": args.symbol,
+                "strategy": "multi_signal_optimize",
+                "train_days": args.days,
+                "weights": {signal_names[i]: round(float(best_w[i]), 4) for i in range(n_signals)},
+                "params": {"trials": args.trials, "long_thr": args.long_threshold, "short_thr": args.short_threshold, "allow_short": allow_short},
+                "in_sample": {k: round(float(v), 4) for k, v in best_r.items()},
+            })
+            print(f"\n[saved to DB]")
         return
 
     # Parse custom weights or use defaults
@@ -387,6 +402,18 @@ def main():
 
     r = simulate(df, matrix, weights, args.long_threshold, args.short_threshold, args.position_size, allow_short)
     print_result(r, f"{args.symbol} | {args.days}d | {n_signals} signals", weights_dict, signal_names)
+
+    if args.save:
+        from src.db.backtest_writer import save_backtest
+        save_backtest({
+            "symbol": args.symbol,
+            "strategy": "multi_signal",
+            "train_days": args.days,
+            "weights": weights_dict,
+            "params": {"long_thr": args.long_threshold, "short_thr": args.short_threshold, "allow_short": allow_short},
+            "in_sample": {k: round(float(v), 4) for k, v in r.items() if not isinstance(v, float) or not __import__("math").isnan(v)},
+        })
+        print(f"\n[saved to DB]")
 
 
 if __name__ == "__main__":

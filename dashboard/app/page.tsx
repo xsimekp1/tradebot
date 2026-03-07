@@ -25,9 +25,14 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">TradeBot</h1>
-          <p className="text-xs text-gray-500">SPY · Paper Trading · Refreshes every 30s</p>
+          <p className="text-xs text-gray-500">BTC/USD · Paper Trading · Refreshes every 30s</p>
         </div>
-        <StatusBar status={status} />
+        <div className="flex items-center gap-3">
+          <a href="/research" className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg">
+            Research Lab
+          </a>
+          <StatusBar status={status} />
+        </div>
       </div>
 
       {/* Stat cards row */}
