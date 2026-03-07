@@ -409,29 +409,51 @@ export function PriceChart({ prices, trades }: Props) {
               return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
             }}
           />
-          {/* Resistance gradient zone (below line) */}
-          {resistanceLine && (
-            <Area
-              type="linear"
-              dataKey="resistanceGradientTop"
-              stroke="none"
-              fill="url(#resistanceGradient)"
-              fillOpacity={1}
-              baseLine={data.map(d => d.resistanceGradientBottom as number)}
-              isAnimationActive={false}
-            />
+          {/* Resistance gradient zone - fill between resistance line and gradient bottom */}
+          {resistanceLine && resistanceGradientHeight > 0 && (
+            <>
+              <Area
+                type="linear"
+                dataKey="resistance"
+                stroke="none"
+                fill="#f43f5e"
+                fillOpacity={0.15}
+                baseValue="dataMin"
+                isAnimationActive={false}
+              />
+              <Area
+                type="linear"
+                dataKey="resistanceGradientBottom"
+                stroke="none"
+                fill="#0f1117"
+                fillOpacity={1}
+                baseValue="dataMin"
+                isAnimationActive={false}
+              />
+            </>
           )}
-          {/* Support gradient zone (above line) */}
-          {supportLine && (
-            <Area
-              type="linear"
-              dataKey="supportGradientTop"
-              stroke="none"
-              fill="url(#supportGradient)"
-              fillOpacity={1}
-              baseLine={data.map(d => d.supportGradientBottom as number)}
-              isAnimationActive={false}
-            />
+          {/* Support gradient zone - fill between support line and gradient top */}
+          {supportLine && supportGradientHeight > 0 && (
+            <>
+              <Area
+                type="linear"
+                dataKey="supportGradientTop"
+                stroke="none"
+                fill="#10b981"
+                fillOpacity={0.15}
+                baseValue="dataMax"
+                isAnimationActive={false}
+              />
+              <Area
+                type="linear"
+                dataKey="support"
+                stroke="none"
+                fill="#0f1117"
+                fillOpacity={1}
+                baseValue="dataMax"
+                isAnimationActive={false}
+              />
+            </>
           )}
           <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
           {/* Resistance line */}
