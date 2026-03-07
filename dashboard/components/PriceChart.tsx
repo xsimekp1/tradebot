@@ -280,24 +280,14 @@ export function PriceChart({ prices, trades }: Props) {
     }
   });
 
-  // Calculate gradient zone thickness (avgDistance / 5)
-  const resistanceGradientHeight = resistanceLine ? resistanceLine.avgDistance / 5 : 0;
-  const supportGradientHeight = supportLine ? supportLine.avgDistance / 5 : 0;
-
-  // Build data with line values and gradient zones
+  // Build data with line values
   const data = prices.map((p) => {
     const row: Record<string, number | null> = { time: p.time, close: p.close };
     if (resistanceLine) {
-      const linePrice = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
-      row.resistance = linePrice;
-      row.resistanceGradientTop = linePrice;
-      row.resistanceGradientBottom = linePrice - resistanceGradientHeight;
+      row.resistance = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
     }
     if (supportLine) {
-      const linePrice = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
-      row.support = linePrice;
-      row.supportGradientBottom = linePrice;
-      row.supportGradientTop = linePrice + supportGradientHeight;
+      row.support = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
     }
     return row;
   });
@@ -371,13 +361,17 @@ export function PriceChart({ prices, trades }: Props) {
       <ResponsiveContainer width="100%" height={312}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
           <defs>
+            {/* Resistance: opaque at top (line), fades down */}
             <linearGradient id="resistanceGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.05} />
+              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
+              <stop offset="30%" stopColor="#f43f5e" stopOpacity={0.1} />
+              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
             </linearGradient>
+            {/* Support: opaque at bottom (line), fades up */}
             <linearGradient id="supportGradient" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
+              <stop offset="30%" stopColor="#10b981" stopOpacity={0.1} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
@@ -409,51 +403,29 @@ export function PriceChart({ prices, trades }: Props) {
               return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
             }}
           />
-          {/* Resistance gradient zone - fill between resistance line and gradient bottom */}
-          {resistanceLine && resistanceGradientHeight > 0 && (
-            <>
-              <Area
-                type="linear"
-                dataKey="resistance"
-                stroke="none"
-                fill="#f43f5e"
-                fillOpacity={0.15}
-                baseValue="dataMin"
-                isAnimationActive={false}
-              />
-              <Area
-                type="linear"
-                dataKey="resistanceGradientBottom"
-                stroke="none"
-                fill="#0f1117"
-                fillOpacity={1}
-                baseValue="dataMin"
-                isAnimationActive={false}
-              />
-            </>
+          {/* Resistance gradient - fills down from resistance line */}
+          {resistanceLine && (
+            <Area
+              type="linear"
+              dataKey="resistance"
+              stroke="none"
+              fill="url(#resistanceGradient)"
+              fillOpacity={1}
+              baseValue="dataMin"
+              isAnimationActive={false}
+            />
           )}
-          {/* Support gradient zone - fill between support line and gradient top */}
-          {supportLine && supportGradientHeight > 0 && (
-            <>
-              <Area
-                type="linear"
-                dataKey="supportGradientTop"
-                stroke="none"
-                fill="#10b981"
-                fillOpacity={0.15}
-                baseValue="dataMax"
-                isAnimationActive={false}
-              />
-              <Area
-                type="linear"
-                dataKey="support"
-                stroke="none"
-                fill="#0f1117"
-                fillOpacity={1}
-                baseValue="dataMax"
-                isAnimationActive={false}
-              />
-            </>
+          {/* Support gradient - fills up from support line */}
+          {supportLine && (
+            <Area
+              type="linear"
+              dataKey="support"
+              stroke="none"
+              fill="url(#supportGradient)"
+              fillOpacity={1}
+              baseValue="dataMax"
+              isAnimationActive={false}
+            />
           )}
           <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
           {/* Resistance line */}
