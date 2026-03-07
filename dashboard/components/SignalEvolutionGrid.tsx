@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  AreaChart, Area, ResponsiveContainer, Tooltip, ReferenceLine,
+  AreaChart, Area, ResponsiveContainer, Tooltip, ReferenceLine, YAxis,
 } from "recharts";
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -72,6 +72,7 @@ export function SignalEvolutionGrid({ rows }: { rows: WeightRow[] }) {
             {/* Sparkline */}
             <ResponsiveContainer width="100%" height={56}>
               <AreaChart data={data} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
+                <YAxis domain={[0.05, 0.30]} hide />
                 <defs>
                   <linearGradient id={`grad-${signal}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={color} stopOpacity={0.3} />
