@@ -29,7 +29,8 @@ def get_current_position(symbol: str) -> dict | None:
             "avg_entry_price": float(pos.avg_entry_price),
         }
     except Exception as e:
-        if "position does not exist" not in str(e).lower() and "no position" not in str(e).lower():
+        msg = str(e).lower()
+        if "not found" not in msg and "position does not exist" not in msg and "no position" not in msg:
             print(f"[executor] get_current_position({symbol}) error: {e}")
         return None
 
