@@ -27,7 +27,7 @@ export function EquityChart({ data }: { data: EquityRow[] }) {
 
   const baseline = Number(data[0]?.total_equity ?? 100000);
   const chartData = data.map((r) => ({
-    time: new Date(r.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    time: new Date(r.timestamp).getTime(),
     equity: Number(r.total_equity),
     pnl: Number(r.total_equity) - baseline,
   }));
@@ -52,10 +52,14 @@ export function EquityChart({ data }: { data: EquityRow[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
         <XAxis
           dataKey="time"
+          type="number"
+          scale="time"
+          domain={["dataMin", "dataMax"]}
           tick={{ fill: "#6b7280", fontSize: 11 }}
           tickLine={false}
           axisLine={false}
-          interval="preserveStartEnd"
+          tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          tickCount={6}
         />
         <YAxis
           tick={{ fill: "#6b7280", fontSize: 11 }}
