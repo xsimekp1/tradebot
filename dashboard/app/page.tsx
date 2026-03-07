@@ -17,7 +17,7 @@ export default function Dashboard() {
   const { data: trades } = useSWR("/api/trades", fetcher, { refreshInterval: REFRESH });
   const { data: weights } = useSWR("/api/weights", fetcher, { refreshInterval: REFRESH });
 
-  const activeWeights = weights?.find((w: { is_active: boolean }) => w.is_active);
+  const activeWeights = Array.isArray(weights) ? weights.find((w: { is_active: boolean }) => w.is_active) : null;
 
   return (
     <div className="min-h-screen bg-[#0f1117] text-gray-100 p-4 space-y-4">
@@ -87,7 +87,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <p className="text-center text-xs text-gray-600 pb-2">
+      <p className="text-center text-xs text-gray-600 pb-2" suppressHydrationWarning>
         Auto-refresh every 30s · {new Date().toLocaleString()}
       </p>
     </div>
