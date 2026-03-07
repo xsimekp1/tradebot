@@ -21,7 +21,9 @@ export default function Dashboard() {
   const { data: trades } = useSWR("/api/trades", fetcher, { refreshInterval: REFRESH });
   const { data: weights } = useSWR("/api/weights", fetcher, { refreshInterval: REFRESH });
 
-  const activeWeights = Array.isArray(weights) ? weights.find((w: { is_active: boolean }) => w.is_active) : null;
+  const activeWeights = Array.isArray(weights)
+    ? (weights.find((w: { is_active: boolean }) => w.is_active) ?? weights[0] ?? null)
+    : null;
   const [showHistory, setShowHistory] = useState(false);
 
   return (
