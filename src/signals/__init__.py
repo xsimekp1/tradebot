@@ -7,20 +7,23 @@ from src.signals.volume import VolumeSignal
 from src.signals.breakout import BreakoutSignal
 from src.signals.channel import ChannelPositionSignal, ChannelSlopeSignal
 
-ALL_SIGNALS = [
-    MomentumSignal(),
-    RSISignal(),
-    BollingerSignal(),
-    VWAPSignal(),
-    ATRSignal(),
-    VolumeSignal(),
-    BreakoutSignal(),
-    ChannelPositionSignal(lookback=500),
-    ChannelSlopeSignal(lookback=500),
-]
+def make_signals():
+    return [
+        MomentumSignal(),
+        RSISignal(),
+        BollingerSignal(),
+        VWAPSignal(),
+        ATRSignal(),
+        VolumeSignal(),
+        BreakoutSignal(),
+        ChannelPositionSignal(lookback=500),
+        ChannelSlopeSignal(lookback=500),
+    ]
+
+ALL_SIGNALS = make_signals()
 
 __all__ = [
     "MomentumSignal", "RSISignal", "BollingerSignal", "VWAPSignal",
     "ATRSignal", "VolumeSignal", "BreakoutSignal",
-    "ChannelPositionSignal", "ChannelSlopeSignal", "ALL_SIGNALS",
+    "ChannelPositionSignal", "ChannelSlopeSignal", "ALL_SIGNALS", "make_signals",
 ]

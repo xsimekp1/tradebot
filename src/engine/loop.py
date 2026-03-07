@@ -111,6 +111,13 @@ async def run_intraday_loop():
             for sig in ALL_SIGNALS:
                 if isinstance(sig, ChannelPositionSignal) and sig.last_channel_info:
                     channel_info = sig.last_channel_info
+                    ci = channel_info
+                    print(
+                        f"[channel] support={ci['support_price']:.2f}  "
+                        f"resistance={ci['resistance_price']:.2f}  "
+                        f"pos={ci['position_pct']:.1f}%  "
+                        f"signal={signal_values.get('channel_position', 0):+.4f}"
+                    )
                     break
 
             # 3. Load weights and score

@@ -261,14 +261,7 @@ class ChannelPositionSignal(BaseSignal):
         else:
             signal = -((-linear_signal) ** 1.5)
 
-        signal = max(-1.0, min(1.0, signal))
-        print(
-            f"[channel_pos] price={current_price:.2f}  "
-            f"support={support_price:.2f}  resistance={resistance_price:.2f}  "
-            f"width={channel_width:.2f}  pos={position*100:.1f}%  "
-            f"linear={linear_signal:+.3f}  signal={signal:+.4f}"
-        )
-        return signal
+        return max(-1.0, min(1.0, signal))
 
 
 class ChannelSlopeSignal(BaseSignal):

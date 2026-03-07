@@ -11,7 +11,7 @@ import numpy as np
 from colorama import Fore, Style
 
 from src.config import settings
-from src.signals import ALL_SIGNALS
+from src.signals import ALL_SIGNALS, make_signals
 
 LOOKBACK = 100
 TRAIN_WEEKS = 4
@@ -128,15 +128,16 @@ def fetch_bars(symbol: str):
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
 def compute_signal_matrix(df, label: str = "") -> np.ndarray:
+    signals = make_signals()  # fresh instances — don't pollute live trading state
     n = len(df)
-    matrix = np.zeros((n, len(ALL_SIGNALS)), dtype=np.float32)
+    matrix = np.zeros((n, len(signals)), dtype=np.float32)
     total = n - LOOKBACK
     tag = f"{label}signals" if label else "signals"
     for idx, i in enumerate(range(LOOKBACK, n)):
         if total > 0 and idx % max(1, total // 10) == 0:
             print(f"  {tag}: {idx * 100 // total}%")
         window = df.iloc[i - LOOKBACK: i + 1]
-        for j, sig in enumerate(ALL_SIGNALS):
+        for j, sig in enumerate(signals):
             matrix[i, j] = sig.safe_compute(window)
     return matrix
 
