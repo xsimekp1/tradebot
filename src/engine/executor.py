@@ -21,8 +21,10 @@ def get_trading_client() -> TradingClient:
 def get_current_position(symbol: str) -> dict | None:
     """Returns position dict with keys: side, qty, avg_entry_price. None if no position."""
     client = get_trading_client()
+    # Alpaca stores crypto positions without slash (BTC/USD → BTCUSD)
+    position_symbol = symbol.replace("/", "")
     try:
-        pos = client.get_open_position(symbol)
+        pos = client.get_open_position(position_symbol)
         return {
             "side": "long" if float(pos.qty) > 0 else "short",
             "qty": abs(float(pos.qty)),
