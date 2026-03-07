@@ -8,13 +8,20 @@ import {
 type WeightRow = {
   version: number;
   weights: Record<string, number>;
+  performance: Record<string, number> | null;
   is_active: boolean;
   created_at: string;
 };
 
+function getThreshold(r: WeightRow): number | null {
+  if (r.performance?.threshold != null) return Number(r.performance.threshold);
+  if (r.weights._threshold != null) return Number(r.weights._threshold);
+  return null;
+}
+
 export function ThresholdHistoryChart({ rows }: { rows: WeightRow[] }) {
   const sorted = [...rows]
-    .filter((r) => r.weights._threshold != null)
+    .filter((r) => getThreshold(r) != null)
     .sort((a, b) => a.version - b.version);
 
   if (sorted.length < 2) {
@@ -27,7 +34,7 @@ export function ThresholdHistoryChart({ rows }: { rows: WeightRow[] }) {
 
   const data = sorted.map((r) => ({
     label: `v${r.version}`,
-    threshold: +Number(r.weights._threshold).toFixed(4),
+    threshold: +Number(getThreshold(r)).toFixed(4),
     active: r.is_active,
   }));
 
