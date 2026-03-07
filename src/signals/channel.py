@@ -200,9 +200,12 @@ class ChannelPositionSignal(BaseSignal):
         self._prev_r_intercept: Optional[float] = None
         self._prev_s_slope: Optional[float] = None
         self._prev_s_intercept: Optional[float] = None
+        # Last computed channel info (for external access)
+        self.last_channel_info: Optional[dict] = None
 
     def compute(self, bars: pd.DataFrame) -> float:
         if len(bars) < 30:
+            self.last_channel_info = None
             return 0.0
 
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
@@ -230,11 +233,21 @@ class ChannelPositionSignal(BaseSignal):
         # Channel width
         channel_width = resistance_price - support_price
         if channel_width <= 0:
+            self.last_channel_info = None
             return 0.0
 
         # Position in channel: 0 = at support, 1 = at resistance
         position = (current_price - support_price) / channel_width
         position = max(0.0, min(1.0, position))
+
+        # Store channel info for external access
+        self.last_channel_info = {
+            "support_price": round(support_price, 2),
+            "resistance_price": round(resistance_price, 2),
+            "channel_width": round(channel_width, 2),
+            "position_pct": round(position * 100, 1),
+            "current_price": round(current_price, 2),
+        }
 
         # Linear signal: +1 at support, -1 at resistance
         linear_signal = 1.0 - 2.0 * position

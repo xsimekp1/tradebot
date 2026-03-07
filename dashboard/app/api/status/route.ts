@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
+import { readFileSync } from "fs";
 import getDb from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+// Try to read channel info from cache file
+function getChannelInfo(): Record<string, number> | null {
+  try {
+    const data = readFileSync("/tmp/channel_info.json", "utf8");
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET() {
   try {
@@ -57,6 +68,7 @@ export async function GET() {
       currentScore: scoreRow?.score != null ? Number(scoreRow.score) : null,
       signalValues: scoreRow?.signal_values ?? null,
       openPosition: openPos ? { side: openPos.side, entryPrice: Number(openPos.entry_price) } : null,
+      channelInfo: getChannelInfo(),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

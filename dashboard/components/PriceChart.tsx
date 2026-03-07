@@ -15,7 +15,15 @@ type Trade = {
   closed_at: string | null;
 };
 
-type Props = { prices: Candle[]; trades: Trade[] };
+type BackendChannelInfo = {
+  support_price: number;
+  resistance_price: number;
+  channel_width: number;
+  position_pct: number;
+  current_price: number;
+} | null;
+
+type Props = { prices: Candle[]; trades: Trade[]; backendChannelInfo?: BackendChannelInfo };
 
 function BuyShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
   return <polygon points={`${cx},${cy - 10} ${cx - 7},${cy + 5} ${cx + 7},${cy + 5}`} fill="#4ade80" opacity={0.95} />;
@@ -221,7 +229,7 @@ function findOptimalSupportLine(
   return bestResult;
 }
 
-export function PriceChart({ prices, trades }: Props) {
+export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
   const { resistanceLine, supportLine, yMin, yMax } = useMemo(() => {
     if (!prices || prices.length === 0) {
       return { resistanceLine: null, supportLine: null, yMin: 0, yMax: 0 };
@@ -471,7 +479,7 @@ export function PriceChart({ prices, trades }: Props) {
       {/* Channel Analysis */}
       {channelInfo && (
         <div className="mt-3 px-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Channel Analysis</div>
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Channel Analysis <span className="text-gray-600">(Chart Data - Coinbase 5m)</span></div>
           <div className="bg-[#12141a] rounded-lg border border-[#2a2d3a] p-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               {/* Channel width */}
@@ -511,6 +519,49 @@ export function PriceChart({ prices, trades }: Props) {
                     </div>
                     <span className="text-white font-medium w-10 text-right">
                       {(channelInfo.pricePosition * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backend channel info - what the trading bot actually uses */}
+      {backendChannelInfo && (
+        <div className="mt-3 px-1">
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Trading Bot Channel <span className="text-indigo-400">(Alpaca 1m - USED FOR SIGNALS)</span></div>
+          <div className="bg-[#12141a] rounded-lg border border-indigo-500/30 p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Support</div>
+                <div className="text-emerald-400 font-medium mt-0.5">${(backendChannelInfo.support_price / 1000).toFixed(2)}k</div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Resistance</div>
+                <div className="text-rose-400 font-medium mt-0.5">${(backendChannelInfo.resistance_price / 1000).toFixed(2)}k</div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Width</div>
+                <div className="text-white font-medium mt-0.5">${backendChannelInfo.channel_width.toFixed(0)}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Current</div>
+                <div className="text-white font-medium mt-0.5">${(backendChannelInfo.current_price / 1000).toFixed(2)}k</div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Position</div>
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-gradient-to-r from-emerald-500/30 to-rose-500/30 rounded-full relative">
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white/70"
+                        style={{ left: `${Math.max(0, Math.min(100, backendChannelInfo.position_pct))}%`, transform: 'translate(-50%, -50%)' }}
+                      />
+                    </div>
+                    <span className="text-indigo-400 font-bold w-12 text-right">
+                      {backendChannelInfo.position_pct.toFixed(0)}%
                     </span>
                   </div>
                 </div>

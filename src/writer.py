@@ -36,6 +36,7 @@ async def write_signals(
     weights: dict[str, float],
     total_score: float,
     timestamp: datetime,
+    channel_info: dict | None = None,
 ):
     """Write one row per signal to trading_signals table."""
     async with AsyncSessionLocal() as db:
@@ -54,6 +55,18 @@ async def write_signals(
             )
             db.add(row)
         await db.commit()
+
+    # Store channel info in a simple cache file for API access
+    if channel_info:
+        import json
+        import os
+        cache_dir = "/tmp" if os.path.exists("/tmp") else "."
+        cache_file = os.path.join(cache_dir, "channel_info.json")
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(channel_info, f)
+        except Exception:
+            pass  # Ignore cache write errors
 
 
 async def write_trade_open(

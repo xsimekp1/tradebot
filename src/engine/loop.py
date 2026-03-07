@@ -15,6 +15,7 @@ from src.engine.executor import (
 )
 from src.engine.scoring import compute_score
 from src.signals import ALL_SIGNALS
+from src.signals.channel import ChannelPositionSignal
 from src.writer import write_signals, write_equity, write_trade_open, write_trade_close, load_active_weights
 
 colorama_init(autoreset=True)
@@ -105,6 +106,13 @@ async def run_intraday_loop():
             # 2. Compute signals
             signal_values = {s.name: s.safe_compute(bars) for s in ALL_SIGNALS}
 
+            # Get channel info from ChannelPositionSignal for frontend display
+            channel_info = None
+            for sig in ALL_SIGNALS:
+                if isinstance(sig, ChannelPositionSignal) and sig.last_channel_info:
+                    channel_info = sig.last_channel_info
+                    break
+
             # 3. Load weights and score
             weights, threshold = await load_active_weights()
             score = compute_score(signal_values, weights)
@@ -149,7 +157,7 @@ async def run_intraday_loop():
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
 
             # 6. Write signals and equity to DB
-            await write_signals(symbol, signal_values, weights, score, now)
+            await write_signals(symbol, signal_values, weights, score, now, channel_info)
 
             account = get_account()
             await write_equity(account, now)

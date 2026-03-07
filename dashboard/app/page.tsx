@@ -78,6 +78,7 @@ export default function Dashboard() {
         <PriceChart
           prices={priceData?.prices ?? []}
           trades={priceData?.trades ?? []}
+          backendChannelInfo={status?.channelInfo ?? null}
         />
       </div>
 
