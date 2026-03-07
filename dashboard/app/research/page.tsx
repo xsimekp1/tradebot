@@ -6,6 +6,7 @@ import { ResearchTable } from "@/components/ResearchTable";
 import { WeightsComparison } from "@/components/WeightsComparison";
 import { WalkForwardChart } from "@/components/WalkForwardChart";
 import { ScoreGauge } from "@/components/ScoreGauge";
+import { SignalEvolutionGrid } from "@/components/SignalEvolutionGrid";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -111,6 +112,16 @@ export default function ResearchPage() {
             Optimization Runs ({optimized.length} runs)
           </h2>
           <ResearchTable runs={optimized} onSelect={setSelected} selected={selected} />
+        </div>
+      )}
+
+      {/* Per-signal evolution sparklines */}
+      {weightHistory.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            Signal Coefficient Evolution
+          </h2>
+          <SignalEvolutionGrid rows={weightHistory} />
         </div>
       )}
 
