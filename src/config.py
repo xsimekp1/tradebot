@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     SCORE_SHORT_THRESHOLD: float = -0.15
     POSITION_SIZE_USD: float = 1000.0
     # How many bars to fetch for signal computation
-    BARS_LIMIT: int = 100
+    BARS_LIMIT: int = 500
     # Nightly mutation: number of days of trades to evaluate
     MUTATION_LOOKBACK_DAYS: int = 7
 

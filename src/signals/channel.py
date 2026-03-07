@@ -193,7 +193,7 @@ class ChannelPositionSignal(BaseSignal):
 
     name = "channel_position"
 
-    def __init__(self, lookback: int = 120):
+    def __init__(self, lookback: int = 500):
         self.lookback = lookback
         # Cache for warm-start optimization
         self._prev_r_slope: Optional[float] = None
@@ -225,7 +225,7 @@ class ChannelPositionSignal(BaseSignal):
         self._prev_s_slope = s_slope
         self._prev_s_intercept = s_intercept
 
-        # Current line values
+        # Extrapolate lines to current bar (last index in window)
         n = len(prices) - 1
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
@@ -281,7 +281,7 @@ class ChannelSlopeSignal(BaseSignal):
 
     name = "channel_slope"
 
-    def __init__(self, lookback: int = 120):
+    def __init__(self, lookback: int = 500):
         self.lookback = lookback
         self._prev_r_slope: Optional[float] = None
         self._prev_r_intercept: Optional[float] = None

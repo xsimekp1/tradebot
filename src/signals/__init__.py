@@ -15,8 +15,8 @@ ALL_SIGNALS = [
     ATRSignal(),
     VolumeSignal(),
     BreakoutSignal(),
-    ChannelPositionSignal(),
-    ChannelSlopeSignal(),
+    ChannelPositionSignal(lookback=500),
+    ChannelSlopeSignal(lookback=500),
 ]
 
 __all__ = [
