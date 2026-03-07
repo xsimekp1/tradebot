@@ -24,7 +24,7 @@ colorama_init(autoreset=True)
 def main():
     parser = argparse.ArgumentParser(description="Online strategy evolution via walk-forward backtesting")
     parser.add_argument("--symbol", default=settings.SYMBOL)
-    parser.add_argument("--mutations", type=int, default=10, help="Mutations per cycle (default: 10)")
+    parser.add_argument("--mutations", type=int, default=2, help="Mutations per cycle (default: 2)")
     parser.add_argument("--sigma", type=float, default=0.05, help="Mutation strength (default: 0.05)")
     parser.add_argument("--interval", type=int, default=600, help="Loop interval seconds (default: 600)")
     parser.add_argument("--loop", action="store_true", help="Run continuously")

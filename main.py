@@ -14,7 +14,7 @@ from src.config import settings
 
 MODE = os.environ.get("RAILWAY_MODE", "evolve").strip().lstrip("=")
 EVOLVE_INTERVAL = int(os.environ.get("EVOLVE_INTERVAL", "600"))   # seconds
-EVOLVE_MUTATIONS = int(os.environ.get("EVOLVE_MUTATIONS", "10"))
+EVOLVE_MUTATIONS = int(os.environ.get("EVOLVE_MUTATIONS", "2"))
 EVOLVE_SIGMA = float(os.environ.get("EVOLVE_SIGMA", "0.05"))
 
 
