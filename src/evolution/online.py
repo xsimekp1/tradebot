@@ -303,7 +303,14 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
     )
 
     print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, threshold={best_thr:.3f}):{Style.RESET_ALL}")
+    print(f"  {'Signal':<12} {'Old':>7} {'New':>7} {'Δ':>7}")
+    print(f"  {'-'*12} {'-'*7} {'-'*7} {'-'*7}")
     for name in sorted(best["weights"], key=best["weights"].get, reverse=True):
-        v = best["weights"][name]
-        if v > 0.01:
-            print(f"    {name:<12} {Fore.CYAN}{'|' * int(v * 35):<35}{Style.RESET_ALL} {v:.3f}")
+        old_v = current_weights.get(name, 0.0)
+        new_v = best["weights"][name]
+        delta = new_v - old_v
+        col = Fore.GREEN if delta > 0 else Fore.RED if delta < 0 else Style.RESET_ALL
+        print(f"  {name:<12} {old_v:>7.4f} {new_v:>7.4f} {col}{delta:>+7.4f}{Style.RESET_ALL}")
+    thr_delta = best_thr - current_threshold
+    thr_col = Fore.GREEN if thr_delta > 0 else Fore.RED if thr_delta < 0 else Style.RESET_ALL
+    print(f"  {'_threshold':<12} {current_threshold:>7.4f} {best_thr:>7.4f} {thr_col}{thr_delta:>+7.4f}{Style.RESET_ALL}")
