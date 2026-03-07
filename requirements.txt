@@ -1,0 +1,12 @@
+alpaca-py>=0.13.0
+SQLAlchemy==2.0.*
+asyncpg
+psycopg[binary]
+alembic
+pydantic-settings>=2.0
+pandas
+numpy
+ta
+aiohttp
+colorama
+python-dotenv
