@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ComposedChart, Line, Scatter, XAxis, YAxis, Tooltip,
+  ComposedChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from "recharts";
 
@@ -12,70 +12,60 @@ type Trade = {
   exit_price: string | null;
   opened_at: string;
   closed_at: string | null;
-  pnl: string | null;
 };
 
 type Props = { prices: Candle[]; trades: Trade[] };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const BuyDot = (props: any) => {
-  const { cx, cy } = props;
-  return <polygon points={`${cx},${cy - 8} ${cx - 6},${cy + 4} ${cx + 6},${cy + 4}`} fill="#4ade80" opacity={0.9} />;
-};
+type DotProps = { cx?: number; cy?: number; payload?: { buy?: number; sell?: number } };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SellDot = (props: any) => {
-  const { cx, cy } = props;
-  return <polygon points={`${cx},${cy + 8} ${cx - 6},${cy - 4} ${cx + 6},${cy - 4}`} fill="#f87171" opacity={0.9} />;
-};
+function BuyDot({ cx = 0, cy = 0, payload }: DotProps) {
+  if (!payload?.buy) return null;
+  return <polygon points={`${cx},${cy - 8} ${cx - 6},${cy + 4} ${cx + 6},${cy + 4}`} fill="#4ade80" opacity={0.95} />;
+}
+
+function SellDot({ cx = 0, cy = 0, payload }: DotProps) {
+  if (!payload?.sell) return null;
+  return <polygon points={`${cx},${cy + 8} ${cx - 6},${cy - 4} ${cx + 6},${cy - 4}`} fill="#f87171" opacity={0.95} />;
+}
 
 export function PriceChart({ prices, trades }: Props) {
   if (!prices || prices.length === 0) {
     return (
-      <div className="h-52 flex items-center justify-center text-gray-600 text-sm">
+      <div className="h-64 flex items-center justify-center text-gray-600 text-sm">
         Loading price data...
       </div>
     );
   }
 
-  // Merge candles with buy/sell markers
-  const priceMap = new Map(prices.map((p) => [p.time, p.close]));
-
-  // Find closest candle time for a given timestamp
   const snapToCandle = (ts: number) => {
     const times = prices.map((p) => p.time);
-    return times.reduce((a, b) => Math.abs(b - ts) < Math.abs(a - ts) ? b : a);
+    return times.reduce((a, b) => (Math.abs(b - ts) < Math.abs(a - ts) ? b : a));
   };
 
-  const buyMarkers = new Map<number, number>();
-  const sellMarkers = new Map<number, number>();
+  const buyMap = new Map<number, number>();
+  const sellMap = new Map<number, number>();
 
   trades.forEach((t) => {
-    const openTs = new Date(t.opened_at).getTime();
-    const snapOpen = snapToCandle(openTs);
-    const price = Number(t.entry_price);
-    if (price > 0) buyMarkers.set(snapOpen, price);
-
+    const snap = snapToCandle(new Date(t.opened_at).getTime());
+    if (Number(t.entry_price) > 0) buyMap.set(snap, Number(t.entry_price));
     if (t.closed_at && t.exit_price) {
-      const closeTs = new Date(t.closed_at).getTime();
-      const snapClose = snapToCandle(closeTs);
-      sellMarkers.set(snapClose, Number(t.exit_price));
+      const snapClose = snapToCandle(new Date(t.closed_at).getTime());
+      sellMap.set(snapClose, Number(t.exit_price));
     }
   });
 
   const data = prices.map((p) => ({
     time: p.time,
     close: p.close,
-    buy: buyMarkers.get(p.time) ?? null,
-    sell: sellMarkers.get(p.time) ?? null,
+    buy: buyMap.get(p.time) ?? null,
+    sell: sellMap.get(p.time) ?? null,
   }));
 
   const closes = prices.map((p) => p.close);
-  const yMin = Math.min(...closes) * 0.9995;
-  const yMax = Math.max(...closes) * 1.0005;
+  const yMin = Math.min(...closes) * 0.9994;
+  const yMax = Math.max(...closes) * 1.0006;
 
-  // Open entries as reference lines
-  const openTrades = trades.filter((t) => !t.closed_at && t.entry_price);
+  const openTrades = trades.filter((t) => !t.closed_at && Number(t.entry_price) > 0);
 
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -102,7 +92,7 @@ export function PriceChart({ prices, trades }: Props) {
         />
         <Tooltip
           contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }}
-          labelFormatter={(v) => new Date(v).toLocaleTimeString()}
+          labelFormatter={(v) => new Date(v as number).toLocaleTimeString()}
           formatter={(v: number, name: string) => [
             `$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`,
             name === "close" ? "BTC/USD" : name === "buy" ? "BUY" : "SELL",
@@ -114,20 +104,13 @@ export function PriceChart({ prices, trades }: Props) {
             y={Number(t.entry_price)}
             stroke="#4ade80"
             strokeDasharray="4 4"
-            strokeOpacity={0.5}
-            label={{ value: `LONG $${Number(t.entry_price).toFixed(0)}`, fill: "#4ade80", fontSize: 9, position: "insideTopLeft" }}
+            strokeOpacity={0.6}
+            label={{ value: `open $${Number(t.entry_price).toFixed(0)}`, fill: "#4ade80", fontSize: 9, position: "insideTopLeft" }}
           />
         ))}
-        <Line
-          type="monotone"
-          dataKey="close"
-          stroke="#6366f1"
-          strokeWidth={1.5}
-          dot={false}
-          activeDot={{ r: 3, fill: "#6366f1" }}
-        />
-        <Scatter dataKey="buy" shape={<BuyDot />} />
-        <Scatter dataKey="sell" shape={<SellDot />} />
+        <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+        <Line type="monotone" dataKey="buy" stroke="transparent" dot={<BuyDot />} activeDot={false} legendType="none" connectNulls={false} />
+        <Line type="monotone" dataKey="sell" stroke="transparent" dot={<SellDot />} activeDot={false} legendType="none" connectNulls={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
