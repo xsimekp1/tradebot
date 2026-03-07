@@ -25,12 +25,6 @@ function SellShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
   return <polygon points={`${cx},${cy + 10} ${cx - 7},${cy - 5} ${cx + 7},${cy - 5}`} fill="#f87171" opacity={0.95} />;
 }
 
-type TrendLine = {
-  level: number;
-  strength: number;  // Number of touches (1-5+)
-  type: "support" | "resistance";
-};
-
 type DiagonalLine = {
   startTime: number;
   startPrice: number;
@@ -44,12 +38,12 @@ type DiagonalLine = {
 // Find diagonal trend lines connecting 3+ pivot points
 function findDiagonalLines(
   data: { time: number; close: number }[],
-  lookback: number = 3,
-  tolerance: number = 0.003 // 0.3% tolerance for point to be "on line"
+  lookback: number = 5,  // Larger window for more significant pivots
+  tolerance: number = 0.004 // 0.4% tolerance
 ): DiagonalLine[] {
-  if (data.length < 10) return [];
+  if (data.length < 15) return [];
 
-  // Find local maxima and minima
+  // Find local maxima and minima with significance filter
   const maxima: { time: number; price: number; idx: number }[] = [];
   const minima: { time: number; price: number; idx: number }[] = [];
 
@@ -60,40 +54,54 @@ function findDiagonalLines(
     const max = Math.max(...window);
 
     if (current === max) {
-      maxima.push({ time: data[i].time, price: current, idx: i });
+      // Avoid adding pivot too close to previous one
+      const lastMax = maxima[maxima.length - 1];
+      if (!lastMax || i - lastMax.idx >= 3) {
+        maxima.push({ time: data[i].time, price: current, idx: i });
+      }
     }
     if (current === min) {
-      minima.push({ time: data[i].time, price: current, idx: i });
+      const lastMin = minima[minima.length - 1];
+      if (!lastMin || i - lastMin.idx >= 3) {
+        minima.push({ time: data[i].time, price: current, idx: i });
+      }
     }
   }
 
   const lines: DiagonalLine[] = [];
 
-  // Try to find lines through maxima (resistance)
-  const resistanceLines = findLinesThrough(maxima, data, tolerance, "resistance");
-  lines.push(...resistanceLines);
-
-  // Try to find lines through minima (support)
-  const supportLines = findLinesThrough(minima, data, tolerance, "support");
+  // Find uptrend support lines (connecting rising minima)
+  const supportLines = findTrendLinesThrough(minima, data, tolerance, "support", "up");
   lines.push(...supportLines);
 
-  // Sort by number of points and return top lines
+  // Find downtrend resistance lines (connecting falling maxima)
+  const resistanceLines = findTrendLinesThrough(maxima, data, tolerance, "resistance", "down");
+  lines.push(...resistanceLines);
+
+  // Sort by points and recency, return top 3
+  const currentTime = data[data.length - 1].time;
   return lines
     .filter((l) => l.points >= 3)
-    .sort((a, b) => b.points - a.points)
-    .slice(0, 4);
+    .sort((a, b) => {
+      // Prefer more points and more recent lines
+      const scoreA = a.points + (a.endTime - a.startTime) / (currentTime - data[0].time);
+      const scoreB = b.points + (b.endTime - b.startTime) / (currentTime - data[0].time);
+      return scoreB - scoreA;
+    })
+    .slice(0, 3);
 }
 
-function findLinesThrough(
+function findTrendLinesThrough(
   pivots: { time: number; price: number; idx: number }[],
   data: { time: number; close: number }[],
   tolerance: number,
-  type: "support" | "resistance"
+  type: "support" | "resistance",
+  direction: "up" | "down"
 ): DiagonalLine[] {
   const lines: DiagonalLine[] = [];
   if (pivots.length < 2) return lines;
 
-  // Try each pair of pivots as potential line
+  // Try each pair of pivots
   for (let i = 0; i < pivots.length - 1; i++) {
     for (let j = i + 1; j < pivots.length; j++) {
       const p1 = pivots[i];
@@ -102,8 +110,14 @@ function findLinesThrough(
       // Calculate slope
       const slope = (p2.price - p1.price) / (p2.time - p1.time);
 
-      // Count how many other pivots are on this line
+      // Filter by direction: support lines should go up, resistance should go down
+      if (direction === "up" && slope <= 0) continue;
+      if (direction === "down" && slope >= 0) continue;
+
+      // Count points on line
       let pointsOnLine = 2;
+      let lastPointTime = p2.time;
+
       for (let k = 0; k < pivots.length; k++) {
         if (k === i || k === j) continue;
         const p = pivots[k];
@@ -111,6 +125,7 @@ function findLinesThrough(
         const diff = Math.abs(p.price - expectedPrice) / p.price;
         if (diff < tolerance) {
           pointsOnLine++;
+          if (p.time > lastPointTime) lastPointTime = p.time;
         }
       }
 
@@ -132,12 +147,12 @@ function findLinesThrough(
     }
   }
 
-  // Remove duplicate lines (similar slope and position)
+  // Remove duplicates
   const unique: DiagonalLine[] = [];
   for (const line of lines) {
     const isDuplicate = unique.some(
-      (u) => Math.abs(u.slope - line.slope) / Math.abs(u.slope || 0.0001) < 0.1 &&
-             Math.abs(u.startPrice - line.startPrice) / u.startPrice < 0.005
+      (u) => Math.abs(u.slope - line.slope) / Math.abs(u.slope || 0.0001) < 0.15 &&
+             Math.abs(u.startPrice - line.startPrice) / u.startPrice < 0.008
     );
     if (!isDuplicate) unique.push(line);
   }
@@ -145,83 +160,16 @@ function findLinesThrough(
   return unique;
 }
 
-// Find support/resistance levels with strength (number of touches)
-function findTrendLines(closes: number[], tolerance: number = 0.005): TrendLine[] {
-  const levels: { price: number; type: "support" | "resistance"; touches: number }[] = [];
-  const lookback = 3; // Shorter window for faster detection
-
-  // Find pivot points
-  for (let i = lookback; i < closes.length - lookback; i++) {
-    const window = closes.slice(i - lookback, i + lookback + 1);
-    const current = closes[i];
-    const min = Math.min(...window);
-    const max = Math.max(...window);
-
-    if (current === min) {
-      // Check if near existing support level
-      const existing = levels.find((l) => l.type === "support" && Math.abs(l.price - current) / current < tolerance);
-      if (existing) {
-        existing.touches++;
-        existing.price = (existing.price + current) / 2; // Average the level
-      } else {
-        levels.push({ price: current, type: "support", touches: 1 });
-      }
-    }
-    if (current === max) {
-      const existing = levels.find((l) => l.type === "resistance" && Math.abs(l.price - current) / current < tolerance);
-      if (existing) {
-        existing.touches++;
-        existing.price = (existing.price + current) / 2;
-      } else {
-        levels.push({ price: current, type: "resistance", touches: 1 });
-      }
-    }
-  }
-
-  // Count additional touches (price came close to level)
-  for (const level of levels) {
-    for (const close of closes) {
-      if (Math.abs(close - level.price) / level.price < tolerance * 0.5) {
-        level.touches++;
-      }
-    }
-    level.touches = Math.min(level.touches, 10); // Cap at 10
-  }
-
-  // Sort by strength and return top levels
-  return levels
-    .filter((l) => l.touches >= 1) // Include all pivot levels
-    .sort((a, b) => b.touches - a.touches)
-    .slice(0, 8) // Max 8 lines total
-    .map((l) => ({
-      level: l.price,
-      strength: Math.min(l.touches, 5), // Strength 1-5
-      type: l.type,
-    }));
-}
-
 export function PriceChart({ prices, trades }: Props) {
-  const { trendLines, diagonalLines, currentPrice, nearbyLines, nearbyDiagonals, yMin, yMax } = useMemo(() => {
+  const { diagonalLines, nearbyDiagonals, yMin, yMax } = useMemo(() => {
     if (!prices || prices.length === 0) {
-      return { trendLines: [], diagonalLines: [], currentPrice: 0, nearbyLines: [], nearbyDiagonals: [], yMin: 0, yMax: 0 };
+      return { diagonalLines: [], nearbyDiagonals: [], yMin: 0, yMax: 0 };
     }
 
     const closes = prices.map((p) => p.close);
-    const trendLines = findTrendLines(closes);
     const diagonalLines = findDiagonalLines(prices);
     const currentPrice = closes[closes.length - 1];
     const currentTime = prices[prices.length - 1].time;
-
-    // Find horizontal lines within 1.5% of current price
-    const nearbyLines = trendLines
-      .map((line) => {
-        const dist = Math.abs(currentPrice - line.level);
-        const distancePct = (dist / currentPrice) * 100;
-        const position = currentPrice > line.level ? "above" : currentPrice < line.level ? "below" : "at";
-        return { line, distance: dist, distancePct, position };
-      })
-      .filter((l) => l.distancePct < 1.5)
-      .sort((a, b) => a.distance - b.distance);
 
     // Find diagonal lines near current price
     const nearbyDiagonals = diagonalLines
@@ -232,17 +180,14 @@ export function PriceChart({ prices, trades }: Props) {
         const position = currentPrice > linePrice ? "above" : "below";
         return { line, linePrice, distance: dist, distancePct, position };
       })
-      .filter((l) => l.distancePct < 2)
+      .filter((l) => l.distancePct < 3)
       .sort((a, b) => a.distance - b.distance);
 
     return {
-      trendLines,
       diagonalLines,
-      currentPrice,
-      nearbyLines,
       nearbyDiagonals,
-      yMin: Math.min(...closes) * 0.9994,
-      yMax: Math.max(...closes) * 1.0006,
+      yMin: Math.min(...closes) * 0.999,
+      yMax: Math.max(...closes) * 1.001,
     };
   }, [prices]);
 
@@ -291,56 +236,32 @@ export function PriceChart({ prices, trades }: Props) {
 
   return (
     <div>
-      {/* Nearby lines indicator */}
-      {(nearbyLines.length > 0 || nearbyDiagonals.length > 0) && (
+      {/* Nearby diagonal lines indicator */}
+      {nearbyDiagonals.length > 0 && (
         <div className="text-xs mb-2 px-1 space-y-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide">Nearby levels</div>
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide">Trend Lines</div>
           <div className="flex flex-wrap gap-2">
-            {/* Horizontal levels */}
-            {nearbyLines.map((nl, i) => {
-              const isBelow = nl.position === "below";
-              const bgColor = isBelow ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30";
-              const textColor = isBelow ? "text-green-400" : "text-red-400";
-              const arrow = isBelow ? "↓" : "↑";
-              const isClose = nl.distancePct < 0.3;
-              return (
-                <div
-                  key={`h-${i}`}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded border ${bgColor} ${isClose ? "ring-1 ring-yellow-500/50" : ""}`}
-                >
-                  <span className={textColor}>{arrow}</span>
-                  <span className={textColor}>${(nl.line.level / 1000).toFixed(2)}k</span>
-                  <span className="text-gray-500">|</span>
-                  <span className={isClose ? "text-yellow-400" : "text-gray-400"}>
-                    {nl.distancePct.toFixed(2)}%
-                  </span>
-                  <span className="text-gray-600 text-[10px]">
-                    ({nl.line.strength}/5)
-                  </span>
-                </div>
-              );
-            })}
-            {/* Diagonal trend lines */}
             {nearbyDiagonals.map((nd, i) => {
-              const isBelow = nd.position === "below";
-              const bgColor = isBelow ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30";
-              const textColor = isBelow ? "text-green-400" : "text-red-400";
-              const arrow = isBelow ? "↘" : "↗";
-              const slopeDir = nd.line.slope > 0 ? "↗" : "↘";
+              const isSupport = nd.line.type === "support";
+              const bgColor = isSupport ? "bg-emerald-500/15 border-emerald-500/40" : "bg-rose-500/15 border-rose-500/40";
+              const textColor = isSupport ? "text-emerald-400" : "text-rose-400";
+              const icon = isSupport ? "↗" : "↘";
               const isClose = nd.distancePct < 0.5;
               return (
                 <div
                   key={`d-${i}`}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded border ${bgColor} ${isClose ? "ring-1 ring-yellow-500/50" : ""}`}
                 >
-                  <span className={textColor}>{slopeDir}</span>
+                  <span className={`${textColor} font-bold`}>{icon}</span>
+                  <span className={textColor}>{isSupport ? "Support" : "Resistance"}</span>
+                  <span className="text-gray-500">|</span>
                   <span className={textColor}>${(nd.linePrice / 1000).toFixed(2)}k</span>
                   <span className="text-gray-500">|</span>
                   <span className={isClose ? "text-yellow-400" : "text-gray-400"}>
-                    {nd.distancePct.toFixed(2)}%
+                    {nd.distancePct.toFixed(2)}% {nd.position}
                   </span>
                   <span className="text-gray-600 text-[10px]">
-                    ({nd.line.points}pt {nd.line.type === "support" ? "S" : "R"})
+                    ({nd.line.points} touches)
                   </span>
                 </div>
               );
@@ -376,20 +297,23 @@ export function PriceChart({ prices, trades }: Props) {
           formatter={(v: number) => [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, "BTC/USD"]}
         />
         <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-        {/* Diagonal trend lines */}
-        {diagonalLines.map((line, i) => (
-          <Line
-            key={`diag-${i}`}
-            type="linear"
-            dataKey={`diag${i}`}
-            stroke={line.type === "support" ? "#22c55e" : "#ef4444"}
-            strokeWidth={1 + line.points * 0.3}
-            strokeDasharray="8 4"
-            strokeOpacity={0.6 + line.points * 0.1}
-            dot={false}
-            connectNulls={false}
-          />
-        ))}
+        {/* Diagonal trend lines with distinct styles */}
+        {diagonalLines.map((line, i) => {
+          const isSupport = line.type === "support";
+          return (
+            <Line
+              key={`diag-${i}`}
+              type="linear"
+              dataKey={`diag${i}`}
+              stroke={isSupport ? "#10b981" : "#f43f5e"}
+              strokeWidth={1.5 + line.points * 0.3}
+              strokeDasharray={isSupport ? "12 4" : "4 4"}
+              strokeOpacity={0.8}
+              dot={false}
+              connectNulls={false}
+            />
+          );
+        })}
         {openTrades.map((t, i) => (
           <ReferenceLine
             key={i}
@@ -406,30 +330,6 @@ export function PriceChart({ prices, trades }: Props) {
         {sellMarkers.map((s, i) => (
           <ReferenceDot key={`sell-${i}`} x={s.time} y={s.price} r={0} shape={<SellShape />} />
         ))}
-        {/* Support/Resistance lines with strength */}
-        {trendLines.map((line, i) => {
-          const isSupport = line.type === "support";
-          const color = isSupport ? "#22c55e" : "#ef4444";
-          const opacity = 0.3 + line.strength * 0.14; // 0.44 to 1.0 based on strength
-          const strokeWidth = 1 + line.strength * 0.3; // 1.3 to 2.5
-          const label = `${isSupport ? "S" : "R"} $${(line.level / 1000).toFixed(1)}k (${line.strength})`;
-          return (
-            <ReferenceLine
-              key={`trend-${i}`}
-              y={line.level}
-              stroke={color}
-              strokeDasharray="6 3"
-              strokeOpacity={opacity}
-              strokeWidth={strokeWidth}
-              label={{
-                value: label,
-                fill: color,
-                fontSize: 9,
-                position: isSupport ? "insideBottomLeft" : "insideTopLeft",
-              }}
-            />
-          );
-        })}
       </ComposedChart>
     </ResponsiveContainer>
     </div>
