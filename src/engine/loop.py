@@ -35,11 +35,50 @@ def is_market_open() -> bool:
         return True  # assume open if check fails
 
 
+async def _recover_open_trade(symbol: str) -> str | None:
+    """On startup, find any open trade in DB. If Alpaca has a position but DB doesn't, create a synthetic entry."""
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.models.trade import Trade
+
+    # 1. Check DB for open trade
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Trade)
+                .where(Trade.symbol == symbol, Trade.closed_at.is_(None))
+                .order_by(Trade.opened_at.desc())
+            )
+            trade = result.scalars().first()
+            if trade:
+                print(f"{Fore.CYAN}[loop] Recovered open trade {trade.id} ({trade.side}) from DB{Style.RESET_ALL}")
+                return str(trade.id)
+    except Exception as e:
+        print(f"{Fore.RED}[loop] DB trade recovery error: {e}{Style.RESET_ALL}")
+
+    # 2. No DB trade — check if Alpaca has a position and create synthetic entry
+    position = get_current_position(symbol)
+    if position:
+        now = datetime.now(timezone.utc)
+        print(f"{Fore.YELLOW}[loop] Found orphaned Alpaca {position['side']} position, creating DB entry{Style.RESET_ALL}")
+        try:
+            trade_id = await write_trade_open(
+                symbol, position["side"], position["qty"],
+                position["avg_entry_price"], 0.0, None, now
+            )
+            return trade_id
+        except Exception as e:
+            print(f"{Fore.RED}[loop] Failed to create synthetic trade: {e}{Style.RESET_ALL}")
+
+    return None
+
+
 async def run_intraday_loop():
     symbol = settings.SYMBOL
     print(f"{Fore.CYAN}[loop] Starting intraday loop for {symbol}{Style.RESET_ALL}")
 
-    open_trade_id: str | None = None  # DB id of current open trade
+    # Recover open trade from DB on startup (survives restarts)
+    open_trade_id: str | None = await _recover_open_trade(symbol)
 
     while True:
         iteration_start = time.time()
