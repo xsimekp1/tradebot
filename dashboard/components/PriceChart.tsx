@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import {
-  ComposedChart, Line, Area, XAxis, YAxis, Tooltip,
+  ComposedChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, ReferenceLine, ReferenceDot,
 } from "recharts";
 
@@ -381,18 +381,14 @@ export function PriceChart({ prices, trades }: Props) {
       <ResponsiveContainer width="100%" height={312}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
           <defs>
-            {/* Resistance: opaque at top (line), fades down */}
-            <linearGradient id="resistanceGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
-              <stop offset="30%" stopColor="#f43f5e" stopOpacity={0.1} />
-              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
-            </linearGradient>
-            {/* Support: opaque at bottom (line), fades up */}
-            <linearGradient id="supportGradient" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-              <stop offset="30%" stopColor="#10b981" stopOpacity={0.1} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-            </linearGradient>
+            {/* Glow filter for lines */}
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
           <XAxis
@@ -423,53 +419,34 @@ export function PriceChart({ prices, trades }: Props) {
               return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
             }}
           />
-          {/* Resistance gradient - fills down from resistance line */}
-          {resistanceLine && (
-            <Area
-              type="linear"
-              dataKey="resistance"
-              stroke="none"
-              fill="url(#resistanceGradient)"
-              fillOpacity={1}
-              baseValue="dataMin"
-              isAnimationActive={false}
-            />
-          )}
-          {/* Support gradient - fills up from support line */}
-          {supportLine && (
-            <Area
-              type="linear"
-              dataKey="support"
-              stroke="none"
-              fill="url(#supportGradient)"
-              fillOpacity={1}
-              baseValue="dataMax"
-              isAnimationActive={false}
-            />
-          )}
+          {/* Price line */}
           <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-          {/* Resistance line */}
+          {/* Resistance line with glow */}
           {resistanceLine && (
             <Line
               type="linear"
               dataKey="resistance"
               stroke="#f43f5e"
-              strokeWidth={2}
-              strokeOpacity={0.9}
+              strokeWidth={3}
+              strokeOpacity={0.85}
+              strokeDasharray="8 4"
               dot={false}
               connectNulls={true}
+              style={{ filter: "drop-shadow(0 0 4px rgba(244, 63, 94, 0.5))" }}
             />
           )}
-          {/* Support line */}
+          {/* Support line with glow */}
           {supportLine && (
             <Line
               type="linear"
               dataKey="support"
               stroke="#10b981"
-              strokeWidth={2}
-              strokeOpacity={0.9}
+              strokeWidth={3}
+              strokeOpacity={0.85}
+              strokeDasharray="8 4"
               dot={false}
               connectNulls={true}
+              style={{ filter: "drop-shadow(0 0 4px rgba(16, 185, 129, 0.5))" }}
             />
           )}
           {openTrades.map((t, i) => (
