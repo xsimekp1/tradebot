@@ -149,25 +149,34 @@ async def run_intraday_loop():
             if score > threshold and current_side != "long" and open_trade_id is None:
                 if current_side == "short":
                     close_position(symbol)
-                print(f"{Fore.GREEN}[loop] Opening LONG ${position_usd:.0f} (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
+                print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > threshold={threshold:.3f}{Style.RESET_ALL}")
                 order_id = open_long(symbol, score, position_usd)
                 if order_id:
                     qty = position_usd / current_price
                     open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
 
             elif score < -threshold and open_trade_id is not None and current_side == "long":
-                # Close long on bearish signal
                 pnl = (current_price - position["avg_entry_price"]) * position["qty"] if position else 0.0
                 await write_trade_close(open_trade_id, current_price, pnl, now)
                 open_trade_id = None
-                print(f"{Fore.YELLOW}[loop] Closing LONG, score={score:+.3f} < {-threshold:.3f}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}[loop] → CLOSE LONG  score={score:+.3f} < -{threshold:.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
                 close_position(symbol)
                 if settings.ASSET_CLASS != "crypto":
-                    print(f"{Fore.RED}[loop] Opening SHORT ${position_usd:.0f} (score={score:+.3f}){Style.RESET_ALL}")
+                    print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f}{Style.RESET_ALL}")
                     order_id = open_short(symbol, score, position_usd)
                     if order_id:
                         qty = position_usd / current_price
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
+
+            else:
+                pos_str = f"pozice={current_side}" if current_side else "bez pozice"
+                if score > 0:
+                    reason = f"score={score:+.3f} pod prahem {threshold:.3f}" if score <= threshold else f"score={score:+.3f} ale {pos_str}"
+                elif score < 0:
+                    reason = f"score={score:+.3f} nad prahem -{threshold:.3f}" if score >= -threshold else f"score={score:+.3f} ale {pos_str}"
+                else:
+                    reason = f"score={score:+.3f}"
+                print(f"[loop] → žádná akce  {reason}  ({pos_str})")
 
             # 6. Write signals and equity to DB
             await write_signals(symbol, signal_values, weights, score, now, channel_info)
