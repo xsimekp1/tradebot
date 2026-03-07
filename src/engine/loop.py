@@ -65,7 +65,7 @@ async def run_intraday_loop():
             signal_values = {s.name: s.safe_compute(bars) for s in ALL_SIGNALS}
 
             # 3. Load weights and score
-            weights = await load_active_weights()
+            weights, threshold = await load_active_weights()
             score = compute_score(signal_values, weights)
 
             print(
@@ -81,14 +81,14 @@ async def run_intraday_loop():
 
             # 5. Execute trade logic
             order_id = None
-            if score > settings.SCORE_LONG_THRESHOLD and current_side != "long":
+            if score > threshold and current_side != "long":
                 if current_side == "short":
                     print(f"{Fore.YELLOW}[loop] Closing short{Style.RESET_ALL}")
                     close_position(symbol)
-                print(f"{Fore.GREEN}[loop] Opening LONG (score={score:+.3f}){Style.RESET_ALL}")
+                print(f"{Fore.GREEN}[loop] Opening LONG (score={score:+.3f} > {threshold:.3f}){Style.RESET_ALL}")
                 order_id = open_long(symbol, score)
 
-            elif score < settings.SCORE_SHORT_THRESHOLD and current_side != "short":
+            elif score < -threshold and current_side != "short":
                 if settings.ASSET_CLASS == "crypto":
                     # Crypto: no short selling — just close long if held
                     if current_side == "long":
@@ -98,7 +98,7 @@ async def run_intraday_loop():
                     if current_side == "long":
                         print(f"{Fore.YELLOW}[loop] Closing long{Style.RESET_ALL}")
                         close_position(symbol)
-                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f}){Style.RESET_ALL}")
+                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f} < {-threshold:.3f}){Style.RESET_ALL}")
                     order_id = open_short(symbol, score)
 
             # 6. Write signals and equity to DB

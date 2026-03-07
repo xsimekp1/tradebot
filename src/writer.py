@@ -9,8 +9,11 @@ from src.models.signal import TradingSignal
 from src.models.weights import SignalWeights
 
 
-async def load_active_weights() -> dict[str, float]:
-    """Load active signal weights from DB, fall back to defaults."""
+DEFAULT_THRESHOLD = 0.15
+
+
+async def load_active_weights() -> tuple[dict[str, float], float]:
+    """Load active signal weights and threshold from DB, fall back to defaults."""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(SignalWeights)
@@ -19,8 +22,10 @@ async def load_active_weights() -> dict[str, float]:
         )
         active = result.scalars().first()
         if active:
-            return dict(active.weights)
-        return dict(DEFAULT_WEIGHTS)
+            raw = dict(active.weights)
+            threshold = float(raw.pop("_threshold", DEFAULT_THRESHOLD))
+            return raw, threshold
+        return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD
 
 
 async def write_signals(
@@ -34,7 +39,7 @@ async def write_signals(
     async with AsyncSessionLocal() as db:
         for name, value in signal_values.items():
             weight = weights.get(name, 0.0)
-            weight_sum = sum(abs(w) for w in weights.values())
+            weight_sum = sum(abs(w) for k, w in weights.items() if not k.startswith("_"))
             contribution = (value * weight / weight_sum) if weight_sum > 0 else 0.0
 
             row = TradingSignal(

@@ -20,6 +20,11 @@ SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 
+DEFAULT_THRESHOLD = 0.15
+THRESHOLD_MIN = 0.05
+THRESHOLD_MAX = 0.40
+
+
 def _db_url() -> str:
     return (
         settings.DATABASE_URL_ASYNC
@@ -28,8 +33,8 @@ def _db_url() -> str:
     )
 
 
-def load_active_weights() -> tuple[dict, int]:
-    """Returns (weights_dict, version). Falls back to equal weights."""
+def load_active_weights() -> tuple[dict, int, float]:
+    """Returns (signal_weights, version, threshold). Falls back to equal weights."""
     import psycopg
     try:
         with psycopg.connect(_db_url()) as conn:
@@ -37,14 +42,18 @@ def load_active_weights() -> tuple[dict, int]:
                 "SELECT weights, version FROM signal_weights WHERE is_active=TRUE ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             if row:
-                return dict(row[0]), int(row[1])
+                raw = dict(row[0])
+                threshold = float(raw.pop("_threshold", DEFAULT_THRESHOLD))
+                return raw, int(row[1]), threshold
     except Exception as e:
         print(f"{Fore.YELLOW}DB load failed: {e}{Style.RESET_ALL}")
-    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0
+    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD
 
 
-def save_weights(weights: dict, version: int, performance: dict) -> None:
+def save_weights(weights: dict, version: int, performance: dict, threshold: float) -> None:
     import psycopg
+    payload = {k: round(v, 4) for k, v in weights.items()}
+    payload["_threshold"] = round(threshold, 4)
     with psycopg.connect(_db_url()) as conn:
         conn.execute("UPDATE signal_weights SET is_active=FALSE WHERE is_active=TRUE")
         conn.execute(
@@ -55,13 +64,13 @@ def save_weights(weights: dict, version: int, performance: dict) -> None:
             (
                 str(uuid.uuid4()),
                 version,
-                json.dumps({k: round(v, 4) for k, v in weights.items()}),
+                json.dumps(payload),
                 json.dumps(performance),
                 datetime.now(timezone.utc),
             ),
         )
         conn.commit()
-    print(f"  {Fore.GREEN}[saved v{version} to DB]{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}[saved v{version} to DB  threshold={threshold:.3f}]{Style.RESET_ALL}")
 
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -133,7 +142,7 @@ def compute_signal_matrix(df, label: str = "") -> np.ndarray:
 # ── Simulation ────────────────────────────────────────────────────────────────
 
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
-             long_thr: float = 0.15, short_thr: float = -0.15,
+             long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
              allow_short: bool = False) -> dict:
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
@@ -218,10 +227,16 @@ def mutate(weights: dict, sigma: float) -> dict:
     return {k: v / total for k, v in mutated.items()} if total > 0 else weights.copy()
 
 
+def mutate_threshold(threshold: float, sigma: float) -> float:
+    """Mutate threshold with small noise, clamped to valid range."""
+    new_thr = threshold + float(np.random.normal(0, sigma * 0.5))
+    return float(np.clip(new_thr, THRESHOLD_MIN, THRESHOLD_MAX))
+
+
 # ── Evolution cycle ───────────────────────────────────────────────────────────
 
 def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None:
-    current_weights, version = load_active_weights()
+    current_weights, version, current_threshold = load_active_weights()
 
     # Integrate any new signals added since last saved version
     new_signals = [n for n in SIGNAL_NAMES if n not in current_weights]
@@ -235,7 +250,7 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
     if total > 0:
         current_weights = {k: v / total for k, v in current_weights.items()}
 
-    print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}){Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}, threshold={current_threshold:.3f}){Style.RESET_ALL}")
     top = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
 
@@ -250,13 +265,14 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
     mat_test = compute_signal_matrix(df_test, "Test  ")
 
     current_arr = np.array([current_weights.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
-    current_oos = simulate(df_test, mat_test, current_arr)
+    current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold)
 
-    candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos, "label": "current"}]
+    candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos, "threshold": current_threshold, "label": "current"}]
     for i in range(n_mutations):
         w_dict = mutate(current_weights, sigma)
         w_arr = np.array([w_dict.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
-        candidates.append({"weights": w_dict, "arr": w_arr, "oos": simulate(df_test, mat_test, w_arr), "label": f"mut#{i+1:02d}"})
+        thr = mutate_threshold(current_threshold, sigma)
+        candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "oos": simulate(df_test, mat_test, w_arr, thr, -thr), "label": f"mut#{i+1:02d}"})
 
     candidates.sort(key=lambda c: (c["oos"]["sharpe"], c["oos"]["return_pct"]), reverse=True)
 
@@ -274,16 +290,19 @@ def evolve_once(symbol: str, n_mutations: int = 10, sigma: float = 0.05) -> None
         print(f"\n  {Fore.YELLOW}Current strategy is best — no update.{Style.RESET_ALL}")
         return
 
-    is_stats = simulate(df_train, mat_train, best["arr"])
+    best_thr = best["threshold"]
+    is_stats = simulate(df_train, mat_train, best["arr"], best_thr, -best_thr)
     new_version = version + 1
     save_weights(
         best["weights"],
         new_version,
         {"in_sample": is_stats, "out_of_sample": best["oos"],
-         "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma},
+         "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma,
+         "threshold": best_thr},
+        best_thr,
     )
 
-    print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%):{Style.RESET_ALL}")
+    print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, threshold={best_thr:.3f}):{Style.RESET_ALL}")
     for name in sorted(best["weights"], key=best["weights"].get, reverse=True):
         v = best["weights"][name]
         if v > 0.01:
