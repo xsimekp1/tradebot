@@ -16,8 +16,8 @@ def make_signals():
         ATRSignal(),
         VolumeSignal(),
         BreakoutSignal(),
-        ChannelPositionSignal(lookback=500),
-        ChannelSlopeSignal(lookback=500),
+        ChannelPositionSignal(lookback=600),
+        ChannelSlopeSignal(lookback=600),
     ]
 
 ALL_SIGNALS = make_signals()

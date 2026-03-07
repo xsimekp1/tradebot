@@ -193,7 +193,7 @@ class ChannelPositionSignal(BaseSignal):
 
     name = "channel_position"
 
-    def __init__(self, lookback: int = 500):
+    def __init__(self, lookback: int = 600):
         self.lookback = lookback
         # Cache for warm-start optimization
         self._prev_r_slope: Optional[float] = None
@@ -274,7 +274,7 @@ class ChannelSlopeSignal(BaseSignal):
 
     name = "channel_slope"
 
-    def __init__(self, lookback: int = 500):
+    def __init__(self, lookback: int = 600):
         self.lookback = lookback
         self._prev_r_slope: Optional[float] = None
         self._prev_r_intercept: Optional[float] = None
