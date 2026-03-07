@@ -21,16 +21,17 @@ export async function GET() {
   }
 
   // Fetch trades for markers (best-effort, return empty array if DB fails)
-  let trades: unknown[] = [];
+  let trades: Record<string, unknown>[] = [];
   try {
     const sql = getDb();
-    trades = await sql`
+    const rows = await sql`
       SELECT side, entry_price, exit_price, opened_at, closed_at
       FROM trades
       WHERE symbol = 'BTC/USD'
       ORDER BY opened_at DESC
       LIMIT 50
     `;
+    trades = rows as Record<string, unknown>[];
   } catch { /* DB unavailable, show chart without markers */ }
 
   return NextResponse.json({ prices, trades });
