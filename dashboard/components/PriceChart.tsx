@@ -216,7 +216,7 @@ export function PriceChart({ prices, trades }: Props) {
     const nearbyLines = trendLines
       .map((line) => {
         const dist = Math.abs(currentPrice - line.level);
-        const distPct = (dist / currentPrice) * 100;
+        const distancePct = (dist / currentPrice) * 100;
         const position = currentPrice > line.level ? "above" : currentPrice < line.level ? "below" : "at";
         return { line, distance: dist, distancePct, position };
       })
@@ -228,7 +228,7 @@ export function PriceChart({ prices, trades }: Props) {
       .map((line) => {
         const linePrice = line.startPrice + line.slope * (currentTime - line.startTime);
         const dist = Math.abs(currentPrice - linePrice);
-        const distPct = (dist / currentPrice) * 100;
+        const distancePct = (dist / currentPrice) * 100;
         const position = currentPrice > linePrice ? "above" : "below";
         return { line, linePrice, distance: dist, distancePct, position };
       })

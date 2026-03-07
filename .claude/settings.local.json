@@ -24,7 +24,9 @@
       "Bash(git push:*)",
       "Bash(git pull:*)",
       "Bash(git stash:*)",
-      "Bash(git stash pop:*)"
+      "Bash(git stash pop:*)",
+      "Bash(npm run build:*)",
+      "Bash(powershell -Command \"npm run build 2>&1 | Select-Object -First 80\")"
     ]
   }
 }
