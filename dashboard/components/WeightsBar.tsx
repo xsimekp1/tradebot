@@ -21,8 +21,7 @@ const SIGNAL_COLORS: Record<string, string> = {
 };
 
 export function WeightsBar({ weights }: { weights: Record<string, number> | null }) {
-  const raw = weights ?? DEFAULT_WEIGHTS;
-  const w = Object.fromEntries(Object.entries(raw).filter(([k]) => !k.startsWith("_")));
+  const w = weights ?? DEFAULT_WEIGHTS;
   const entries = Object.entries(w).sort((a, b) => b[1] - a[1]);
 
   return (

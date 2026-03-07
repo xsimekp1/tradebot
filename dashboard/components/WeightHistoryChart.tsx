@@ -36,7 +36,7 @@ export function WeightHistoryChart({ rows }: { rows: WeightRow[] }) {
 
   // Collect all signal names present across all versions
   const signals = Array.from(
-    new Set(sorted.flatMap((r) => Object.keys(r.weights).filter((k) => !k.startsWith("_"))))
+    new Set(sorted.flatMap((r) => Object.keys(r.weights)))
   );
 
   const data = sorted.map((r) => ({

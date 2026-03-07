@@ -23,9 +23,10 @@ async def load_active_weights() -> tuple[dict[str, float], float]:
         )
         active = result.scalars().first()
         if active:
-            raw = dict(active.weights)
-            threshold = float(raw.pop("_threshold", DEFAULT_THRESHOLD))
-            return raw, threshold
+            weights_dict = dict(active.weights)
+            perf = dict(active.performance) if active.performance else {}
+            threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
+            return weights_dict, threshold
         return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD
 
 

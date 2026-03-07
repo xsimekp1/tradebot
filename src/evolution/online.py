@@ -39,12 +39,13 @@ def load_active_weights() -> tuple[dict, int, float]:
     try:
         with psycopg.connect(_db_url()) as conn:
             row = conn.execute(
-                "SELECT weights, version FROM signal_weights WHERE is_active=TRUE ORDER BY created_at DESC LIMIT 1"
+                "SELECT weights, version, performance FROM signal_weights WHERE is_active=TRUE ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             if row:
-                raw = dict(row[0])
-                threshold = float(raw.pop("_threshold", DEFAULT_THRESHOLD))
-                return raw, int(row[1]), threshold
+                weights_dict = dict(row[0])
+                perf = dict(row[2]) if row[2] else {}
+                threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
+                return weights_dict, int(row[1]), threshold
     except Exception as e:
         print(f"{Fore.YELLOW}DB load failed: {e}{Style.RESET_ALL}")
     return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD
@@ -53,7 +54,7 @@ def load_active_weights() -> tuple[dict, int, float]:
 def save_weights(weights: dict, version: int, performance: dict, threshold: float) -> None:
     import psycopg
     payload = {k: round(v, 4) for k, v in weights.items()}
-    payload["_threshold"] = round(threshold, 4)
+    performance["threshold"] = round(threshold, 4)  # store in performance, not weights
     with psycopg.connect(_db_url()) as conn:
         conn.execute("UPDATE signal_weights SET is_active=FALSE WHERE is_active=TRUE")
         conn.execute(
