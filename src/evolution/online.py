@@ -128,16 +128,14 @@ def fetch_bars(symbol: str):
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
 def compute_signal_matrix(df, label: str = "") -> np.ndarray:
+    from tqdm import tqdm
     n = len(df)
     matrix = np.zeros((n, len(ALL_SIGNALS)), dtype=np.float32)
-    print(f"  {label}signals on {n:,} bars", end="", flush=True)
-    for i in range(LOOKBACK, n):
+    desc = f"{label}signals" if label else "signals"
+    for i in tqdm(range(LOOKBACK, n), desc=f"  {desc}", unit="bar", ncols=80):
         window = df.iloc[i - LOOKBACK: i + 1]
         for j, sig in enumerate(ALL_SIGNALS):
             matrix[i, j] = sig.safe_compute(window)
-        if i % 5000 == 0:
-            print(".", end="", flush=True)
-    print(" done")
     return matrix
 
 

@@ -11,3 +11,4 @@ ta
 aiohttp
 colorama
 python-dotenv
+tqdm
