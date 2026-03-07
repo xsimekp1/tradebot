@@ -1,32 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh search:*)",
-      "Bash(curl:*)",
-      "Bash(python:*)",
-      "Bash(powershell -Command \"\\(Invoke-RestMethod -Uri ''https://api.github.com/search/repositories?q=tradebot&sort=stars&order=desc&per_page=10''\\).items | Select-Object full_name, stargazers_count, description -First 10 | Format-Table -AutoSize\")",
-      "Bash(git clone:*)",
-      "Bash(git init:*)",
-      "Bash(git remote add:*)",
-      "Bash(git fetch:*)",
-      "Bash(git checkout:*)",
-      "WebFetch(domain:tradebot-dashboard.vercel.app)",
-      "WebFetch(domain:tradebot-xsimekp1.vercel.app)",
-      "WebFetch(domain:xsimekp1-tradebot.vercel.app)",
-      "WebFetch(domain:tradebot-pi.vercel.app)",
-      "WebFetch(domain:tradebot-psi.vercel.app)",
-      "WebFetch(domain:dashboard-xi-ten-39.vercel.app)",
-      "Bash(vercel --version:*)",
-      "Bash(npx vercel --version)",
-      "Bash(railway --version:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
+      "Bash(git rebase:*)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)",
-      "Bash(git stash pop:*)",
-      "Bash(npm run build:*)",
-      "Bash(powershell -Command \"npm run build 2>&1 | Select-Object -First 80\")"
+      "Bash(mv:*)",
+      "Bash(git:*)",
+      "Bash(railway:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vercel:*)",
+      "Bash(curl:*)",
+      "Bash(vercel logs:*)"
     ]
   }
 }

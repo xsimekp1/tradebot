@@ -238,7 +238,10 @@ class ChannelPositionSignal(BaseSignal):
 
         # Position in channel: 0 = at support, 1 = at resistance
         position = (current_price - support_price) / channel_width
-        position = max(0.0, min(1.0, position))
+        # If price is outside channel bounds, signal is unreliable — return neutral
+        if position < 0.0 or position > 1.0:
+            self.last_channel_info = None
+            return 0.0
 
         # Store channel info for external access
         self.last_channel_info = {
