@@ -40,10 +40,13 @@ def get_current_position(symbol: str) -> dict | None:
 def close_position(symbol: str) -> str | None:
     """Close any existing position for symbol. Returns order ID or None."""
     client = get_trading_client()
+    position_symbol = symbol.replace("/", "")
     try:
-        response = client.close_position(symbol)
+        response = client.close_position(position_symbol)
+        print(f"[executor] close_position({symbol}) ok")
         return str(response.id)
-    except Exception:
+    except Exception as e:
+        print(f"[executor] close_position({symbol}) error: {e}")
         return None
 
 
