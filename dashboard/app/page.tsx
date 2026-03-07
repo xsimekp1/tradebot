@@ -1,11 +1,13 @@
 "use client";
 
 import useSWR from "swr";
+import { useState } from "react";
 import { EquityChart } from "@/components/EquityChart";
 import { SignalsPanel } from "@/components/SignalsPanel";
 import { TradesTable } from "@/components/TradesTable";
 import { WeightsBar } from "@/components/WeightsBar";
 import { StatusBar } from "@/components/StatusBar";
+import { WeightHistoryChart } from "@/components/WeightHistoryChart";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const REFRESH = 30_000;
@@ -18,6 +20,7 @@ export default function Dashboard() {
   const { data: weights } = useSWR("/api/weights", fetcher, { refreshInterval: REFRESH });
 
   const activeWeights = Array.isArray(weights) ? weights.find((w: { is_active: boolean }) => w.is_active) : null;
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <div className="min-h-screen bg-[#0f1117] text-gray-100 p-4 space-y-4">
@@ -68,9 +71,19 @@ export default function Dashboard() {
           <EquityChart data={equity ?? []} />
         </div>
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
-            Signal Weights {activeWeights ? `(v${activeWeights.version})` : "(defaults)"}
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+              Signal Weights {activeWeights ? `(v${activeWeights.version})` : "(defaults)"}
+            </h2>
+            {Array.isArray(weights) && weights.length > 0 && (
+              <button
+                onClick={() => setShowHistory(true)}
+                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded-lg"
+              >
+                History
+              </button>
+            )}
+          </div>
           <WeightsBar weights={activeWeights?.weights ?? null} />
         </div>
       </div>
@@ -90,6 +103,35 @@ export default function Dashboard() {
       <p className="text-center text-xs text-gray-600 pb-2" suppressHydrationWarning>
         Auto-refresh every 30s · {new Date().toLocaleString()}
       </p>
+
+      {/* Weight history modal */}
+      {showHistory && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setShowHistory(false)}
+        >
+          <div
+            className="bg-[#1a1d27] border border-[#2a2d3a] rounded-2xl p-6 w-full max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-white">Signal Weight History</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  How each signal&apos;s weight changed across evolution generations
+                </p>
+              </div>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="text-gray-500 hover:text-gray-200 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <WeightHistoryChart rows={Array.isArray(weights) ? weights : []} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
