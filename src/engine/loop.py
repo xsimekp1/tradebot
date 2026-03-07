@@ -116,11 +116,13 @@ async def run_intraday_loop():
                     ci = channel_info
                     ds = f"  Δs={ci['support_price'] - _prev_support:+.2f}" if _prev_support else ""
                     dr = f"  Δr={ci['resistance_price'] - _prev_resistance:+.2f}" if _prev_resistance else ""
-                    breaks_str = f"  breaks={ci['support_breaks']}({ci['support_breaks_pct']}%)" if 'support_breaks' in ci else ""
-                    slope_str = f"  slope={ci['support_slope']:+.6f}" if 'support_slope' in ci else ""
+                    s_breaks_str = f"  breaks={ci['support_breaks']}({ci['support_breaks_pct']}%)" if 'support_breaks' in ci else ""
+                    s_slope_str = f"  slope={ci['support_slope']:+.6f}" if 'support_slope' in ci else ""
+                    r_breaks_str = f"  breaks={ci['resistance_breaks']}({ci['resistance_breaks_pct']}%)" if 'resistance_breaks' in ci else ""
+                    r_slope_str = f"  slope={ci['resistance_slope']:+.6f}" if 'resistance_slope' in ci else ""
                     print(
-                        f"[channel] support={ci['support_price']:.2f}{ds}{breaks_str}{slope_str}  "
-                        f"resistance={ci['resistance_price']:.2f}{dr}  "
+                        f"[channel] support={ci['support_price']:.2f}{ds}{s_breaks_str}{s_slope_str}  "
+                        f"resistance={ci['resistance_price']:.2f}{dr}{r_breaks_str}{r_slope_str}  "
                         f"pos={ci['position_pct']:.1f}%  "
                         f"signal={signal_values.get('channel_position', 0):+.4f}"
                     )

@@ -247,8 +247,11 @@ class ChannelPositionSignal(BaseSignal):
         support_line_vals = s_intercept + s_slope * np.arange(len(prices))
         s_breaks = int(np.sum(prices < support_line_vals))
         s_break_pct = s_breaks / len(prices) * 100
-        local_slope_range = (max(prices) - min(prices)) / len(prices) * 0.1
-        local_offset_range = (max(prices) - min(prices)) * 0.05
+
+        # Resistance line diagnostics
+        resistance_line_vals = r_intercept + r_slope * np.arange(len(prices))
+        r_breaks = int(np.sum(prices > resistance_line_vals))
+        r_break_pct = r_breaks / len(prices) * 100
 
         # Store channel info for external access
         self.last_channel_info = {
@@ -260,7 +263,9 @@ class ChannelPositionSignal(BaseSignal):
             "support_breaks": s_breaks,
             "support_breaks_pct": round(s_break_pct, 1),
             "support_slope": round(s_slope, 6),
-            "support_search_range": round(local_offset_range, 2),
+            "resistance_breaks": r_breaks,
+            "resistance_breaks_pct": round(r_break_pct, 1),
+            "resistance_slope": round(r_slope, 6),
         }
 
         # Linear signal: +1 at support, -1 at resistance

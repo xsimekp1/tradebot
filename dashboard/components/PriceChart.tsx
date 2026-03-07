@@ -21,6 +21,12 @@ type BackendChannelInfo = {
   channel_width: number;
   position_pct: number;
   current_price: number;
+  support_slope?: number;
+  support_breaks?: number;
+  support_breaks_pct?: number;
+  resistance_slope?: number;
+  resistance_breaks?: number;
+  resistance_breaks_pct?: number;
 } | null;
 
 type Props = { prices: Candle[]; trades: Trade[]; backendChannelInfo?: BackendChannelInfo };
@@ -229,6 +235,8 @@ function findOptimalSupportLine(
   return bestResult;
 }
 
+const MS_PER_BAR = 60_000; // backend uses 1-minute bars
+
 export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
   const { resistanceLine, supportLine, yMin, yMax } = useMemo(() => {
     if (!prices || prices.length === 0) {
@@ -236,20 +244,48 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     }
 
     const closes = prices.map((p) => p.close);
-    const resistanceLine = findOptimalResistanceLine(prices);
-    const supportLine = findOptimalSupportLine(prices);
-
     let yMinBase = Math.min(...closes);
     let yMaxBase = Math.max(...closes);
 
+    // Use backend lines if available (same data the bot actually trades on)
+    let resistanceLine: ResistanceLine | null = null;
+    let supportLine: ResistanceLine | null = null;
+
+    if (backendChannelInfo?.resistance_slope !== undefined && backendChannelInfo?.support_slope !== undefined) {
+      const currentTime = prices[prices.length - 1].time;
+      const rSlopePerMs = backendChannelInfo.resistance_slope / MS_PER_BAR;
+      const sSlopePerMs = backendChannelInfo.support_slope / MS_PER_BAR;
+
+      resistanceLine = {
+        slope: rSlopePerMs,
+        intercept: backendChannelInfo.resistance_price - rSlopePerMs * currentTime,
+        refTime: 0,
+        score: 0,
+        breakthroughs: [],
+        avgDistance: 0,
+      };
+      supportLine = {
+        slope: sSlopePerMs,
+        intercept: backendChannelInfo.support_price - sSlopePerMs * currentTime,
+        refTime: 0,
+        score: 0,
+        breakthroughs: [],
+        avgDistance: 0,
+      };
+    } else {
+      // Fallback: frontend grid search (no backend data yet)
+      resistanceLine = findOptimalResistanceLine(prices);
+      supportLine = findOptimalSupportLine(prices);
+    }
+
     if (resistanceLine) {
-      const endPrice = resistanceLine.intercept + resistanceLine.slope * (prices[prices.length - 1].time - resistanceLine.refTime);
-      const startPrice = resistanceLine.intercept;
+      const endPrice = resistanceLine.intercept + resistanceLine.slope * prices[prices.length - 1].time;
+      const startPrice = resistanceLine.intercept + resistanceLine.slope * prices[0].time;
       yMaxBase = Math.max(yMaxBase, startPrice, endPrice);
     }
     if (supportLine) {
-      const endPrice = supportLine.intercept + supportLine.slope * (prices[prices.length - 1].time - supportLine.refTime);
-      const startPrice = supportLine.intercept;
+      const endPrice = supportLine.intercept + supportLine.slope * prices[prices.length - 1].time;
+      const startPrice = supportLine.intercept + supportLine.slope * prices[0].time;
       yMinBase = Math.min(yMinBase, startPrice, endPrice);
     }
 
@@ -259,7 +295,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
       yMin: yMinBase * 0.9995,
       yMax: yMaxBase * 1.0005,
     };
-  }, [prices]);
+  }, [prices, backendChannelInfo]);
 
   if (!prices || prices.length === 0) {
     return (
@@ -292,10 +328,10 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
   const data = prices.map((p) => {
     const row: Record<string, number | null> = { time: p.time, close: p.close };
     if (resistanceLine) {
-      row.resistance = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
+      row.resistance = resistanceLine.intercept + resistanceLine.slope * p.time;
     }
     if (supportLine) {
-      row.support = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
+      row.support = supportLine.intercept + supportLine.slope * p.time;
     }
     return row;
   });
@@ -306,7 +342,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
 
   let resistanceInfo: { price: number; distPct: number } | null = null;
   if (resistanceLine) {
-    const linePrice = resistanceLine.intercept + resistanceLine.slope * (currentTime - resistanceLine.refTime);
+    const linePrice = resistanceLine.intercept + resistanceLine.slope * currentTime;
     resistanceInfo = {
       price: linePrice,
       distPct: ((linePrice - currentPrice) / currentPrice) * 100,
@@ -315,30 +351,10 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
 
   let supportInfo: { price: number; distPct: number } | null = null;
   if (supportLine) {
-    const linePrice = supportLine.intercept + supportLine.slope * (currentTime - supportLine.refTime);
+    const linePrice = supportLine.intercept + supportLine.slope * currentTime;
     supportInfo = {
       price: linePrice,
       distPct: ((currentPrice - linePrice) / currentPrice) * 100,
-    };
-  }
-
-  // Channel analysis - distance between support and resistance
-  let channelInfo: {
-    width: number;           // Absolute distance between lines
-    widthPct: number;        // Width as % of current price
-    pricePosition: number;   // 0 = at support, 1 = at resistance
-    distFromSupport: number; // Distance from support in $
-    distFromResistance: number; // Distance from resistance in $
-  } | null = null;
-
-  if (resistanceInfo && supportInfo) {
-    const width = resistanceInfo.price - supportInfo.price;
-    channelInfo = {
-      width,
-      widthPct: (width / currentPrice) * 100,
-      pricePosition: width > 0 ? (currentPrice - supportInfo.price) / width : 0.5,
-      distFromSupport: currentPrice - supportInfo.price,
-      distFromResistance: resistanceInfo.price - currentPrice,
     };
   }
 
@@ -347,7 +363,9 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
       {/* Line info indicators */}
       {(resistanceInfo || supportInfo) && (
         <div className="text-xs mb-2 px-1 space-y-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide">Optimized Trend Lines</div>
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide">
+            Channel Lines {backendChannelInfo?.support_slope !== undefined ? <span className="text-indigo-400">(Bot data — Alpaca 1m)</span> : <span className="text-gray-600">(Chart estimate)</span>}
+          </div>
           <div className="flex flex-wrap gap-2">
             {resistanceInfo && (
               <div className={`flex items-center gap-1.5 px-2 py-1 rounded border bg-rose-500/15 border-rose-500/40 ${resistanceInfo.distPct < 0.3 ? "ring-1 ring-yellow-500/50" : ""}`}>
@@ -359,7 +377,11 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
                 <span className={resistanceInfo.distPct < 0.3 ? "text-yellow-400" : "text-gray-400"}>
                   {resistanceInfo.distPct >= 0 ? "+" : ""}{resistanceInfo.distPct.toFixed(2)}% {resistanceInfo.distPct >= 0 ? "above" : "BREACH"}
                 </span>
-                {resistanceLine && resistanceLine.breakthroughs.length > 0 && (
+                {backendChannelInfo?.resistance_breaks !== undefined ? (
+                  <span className={`text-[10px] ${backendChannelInfo.resistance_breaks_pct! > 5 ? "text-red-400" : "text-orange-500"}`}>
+                    ({backendChannelInfo.resistance_breaks} breaks {backendChannelInfo.resistance_breaks_pct}%)
+                  </span>
+                ) : resistanceLine && resistanceLine.breakthroughs.length > 0 && (
                   <span className="text-orange-500 text-[10px]">
                     ({resistanceLine.breakthroughs.length} breaks)
                   </span>
@@ -376,7 +398,11 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
                 <span className={supportInfo.distPct < 0.3 ? "text-yellow-400" : "text-gray-400"}>
                   {supportInfo.distPct >= 0 ? "+" : ""}{supportInfo.distPct.toFixed(2)}% {supportInfo.distPct >= 0 ? "above" : "BREACH"}
                 </span>
-                {supportLine && supportLine.breakthroughs.length > 0 && (
+                {backendChannelInfo?.support_breaks !== undefined ? (
+                  <span className={`text-[10px] ${backendChannelInfo.support_breaks_pct! > 5 ? "text-red-400" : "text-orange-500"}`}>
+                    ({backendChannelInfo.support_breaks} breaks {backendChannelInfo.support_breaks_pct}%)
+                  </span>
+                ) : supportLine && supportLine.breakthroughs.length > 0 && (
                   <span className="text-orange-500 text-[10px]">
                     ({supportLine.breakthroughs.length} breaks)
                   </span>
@@ -475,58 +501,6 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
           ))}
         </ComposedChart>
       </ResponsiveContainer>
-
-      {/* Channel Analysis */}
-      {channelInfo && (
-        <div className="mt-3 px-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Channel Analysis <span className="text-gray-600">(Chart Data - Coinbase 5m)</span></div>
-          <div className="bg-[#12141a] rounded-lg border border-[#2a2d3a] p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              {/* Channel width */}
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Channel Width</div>
-                <div className="text-white font-medium mt-0.5">
-                  ${channelInfo.width.toFixed(0)} <span className="text-gray-500">({channelInfo.widthPct.toFixed(2)}%)</span>
-                </div>
-              </div>
-
-              {/* Distance from Support */}
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">From Support</div>
-                <div className="text-emerald-400 font-medium mt-0.5">
-                  +${channelInfo.distFromSupport.toFixed(0)} <span className="text-gray-500">({((channelInfo.distFromSupport / currentPrice) * 100).toFixed(2)}%)</span>
-                </div>
-              </div>
-
-              {/* Distance from Resistance */}
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">From Resistance</div>
-                <div className="text-rose-400 font-medium mt-0.5">
-                  -${channelInfo.distFromResistance.toFixed(0)} <span className="text-gray-500">({((channelInfo.distFromResistance / currentPrice) * 100).toFixed(2)}%)</span>
-                </div>
-              </div>
-
-              {/* Position in channel */}
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Position in Channel</div>
-                <div className="mt-1">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gradient-to-r from-emerald-500/30 to-rose-500/30 rounded-full relative">
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-indigo-400 rounded-full border border-white/50"
-                        style={{ left: `${Math.max(0, Math.min(100, channelInfo.pricePosition * 100))}%`, transform: 'translate(-50%, -50%)' }}
-                      />
-                    </div>
-                    <span className="text-white font-medium w-10 text-right">
-                      {(channelInfo.pricePosition * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Backend channel info - what the trading bot actually uses */}
       {backendChannelInfo && (
