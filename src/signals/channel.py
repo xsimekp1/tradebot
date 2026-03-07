@@ -243,6 +243,13 @@ class ChannelPositionSignal(BaseSignal):
             self.last_channel_info = None
             return 0.0
 
+        # Support line diagnostics
+        support_line_vals = s_intercept + s_slope * np.arange(len(prices))
+        s_breaks = int(np.sum(prices < support_line_vals))
+        s_break_pct = s_breaks / len(prices) * 100
+        local_slope_range = (max(prices) - min(prices)) / len(prices) * 0.1
+        local_offset_range = (max(prices) - min(prices)) * 0.05
+
         # Store channel info for external access
         self.last_channel_info = {
             "support_price": round(support_price, 2),
@@ -250,6 +257,10 @@ class ChannelPositionSignal(BaseSignal):
             "channel_width": round(channel_width, 2),
             "position_pct": round(position * 100, 1),
             "current_price": round(current_price, 2),
+            "support_breaks": s_breaks,
+            "support_breaks_pct": round(s_break_pct, 1),
+            "support_slope": round(s_slope, 6),
+            "support_search_range": round(local_offset_range, 2),
         }
 
         # Linear signal: +1 at support, -1 at resistance
