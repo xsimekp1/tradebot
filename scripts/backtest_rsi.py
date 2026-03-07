@@ -25,29 +25,45 @@ colorama_init(autoreset=True)
 
 
 def fetch_historical_bars(symbol: str, days: int) -> pd.DataFrame:
-    from alpaca.data.historical import StockHistoricalDataClient
-    from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
 
-    client = StockHistoricalDataClient(
-        api_key=settings.ALPACA_API_KEY,
-        secret_key=settings.ALPACA_SECRET_KEY,
-    )
-
-    # Go back a bit extra to account for weekends/holidays
+    is_crypto = "/" in symbol or settings.ASSET_CLASS == "crypto"
     end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    start = end - timedelta(days=days + 4)
+    # Stocks: add extra days for weekends; crypto: exact range
+    start = end - timedelta(days=days + (0 if is_crypto else 4))
 
     print(f"Fetching {symbol} 1-min bars from {start.date()} to {end.date()}...")
 
-    req = StockBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame.Minute,
-        start=start,
-        end=end,
-        feed="iex",
-    )
-    bars = client.get_stock_bars(req)
+    if is_crypto:
+        from alpaca.data.historical import CryptoHistoricalDataClient
+        from alpaca.data.requests import CryptoBarsRequest
+        client = CryptoHistoricalDataClient(
+            api_key=settings.ALPACA_API_KEY,
+            secret_key=settings.ALPACA_SECRET_KEY,
+        )
+        req = CryptoBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Minute,
+            start=start,
+            end=end,
+        )
+        bars = client.get_crypto_bars(req)
+    else:
+        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.requests import StockBarsRequest
+        client = StockHistoricalDataClient(
+            api_key=settings.ALPACA_API_KEY,
+            secret_key=settings.ALPACA_SECRET_KEY,
+        )
+        req = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Minute,
+            start=start,
+            end=end,
+            feed="iex",
+        )
+        bars = client.get_stock_bars(req)
+
     df = bars.df
 
     if df.empty:
@@ -58,10 +74,10 @@ def fetch_historical_bars(symbol: str, days: int) -> pd.DataFrame:
         df = df.xs(symbol, level=0)
 
     df = df.rename(columns=str.lower)
-    df = df[["open", "high", "low", "close", "volume"]].copy()
+    cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+    df = df[cols].copy()
     df = df.sort_index()
 
-    # Keep only last `days` calendar days
     cutoff = end - timedelta(days=days)
     df = df[df.index >= cutoff]
 
