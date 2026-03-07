@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const sql = getDb();
     const [latestSignal] = await sql`
-      SELECT timestamp FROM trading_signals ORDER BY timestamp DESC LIMIT 1
+      SELECT timestamp FROM equity_curve ORDER BY timestamp DESC LIMIT 1
     `;
     const [latestEquity] = await sql`
       SELECT total_equity, daily_pnl, timestamp FROM equity_curve ORDER BY timestamp DESC LIMIT 1
