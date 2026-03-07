@@ -28,11 +28,9 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
         <thead>
           <tr className="text-gray-500 border-b border-[#2a2d3a]">
             <th className="text-left pb-2">Symbol</th>
-            <th className="text-left pb-2">Side</th>
             <th className="text-right pb-2">Entry</th>
             <th className="text-right pb-2">Exit</th>
             <th className="text-right pb-2">PnL</th>
-            <th className="text-right pb-2">Score</th>
             <th className="text-right pb-2">Opened</th>
             <th className="text-right pb-2">Status</th>
           </tr>
@@ -45,9 +43,6 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
             return (
               <tr key={t.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#2a2d3a]/30 transition-colors">
                 <td className="py-1.5 font-mono text-gray-200">{t.symbol}</td>
-                <td className={`py-1.5 font-medium ${t.side === "long" ? "text-green-400" : "text-red-400"}`}>
-                  {t.side.toUpperCase()}
-                </td>
                 <td className="py-1.5 text-right font-mono text-gray-300">
                   {t.entry_price ? `$${Number(t.entry_price).toFixed(2)}` : "—"}
                 </td>
@@ -56,9 +51,6 @@ export function TradesTable({ trades }: { trades: Trade[] }) {
                 </td>
                 <td className={`py-1.5 text-right font-mono font-semibold ${pnlColor}`}>
                   {pnl != null ? `$${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}` : "open"}
-                </td>
-                <td className="py-1.5 text-right font-mono text-gray-500">
-                  {t.score ? Number(t.score).toFixed(3) : "—"}
                 </td>
                 <td className="py-1.5 text-right text-gray-600">
                   {t.opened_at ? new Date(t.opened_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
