@@ -44,7 +44,7 @@ async def run_intraday_loop():
         now = datetime.now(timezone.utc)
 
         try:
-            if not is_market_open():
+            if settings.ASSET_CLASS == "stock" and not is_market_open():
                 print(f"{Fore.YELLOW}[loop] Market closed, waiting...{Style.RESET_ALL}")
                 await asyncio.sleep(settings.LOOP_INTERVAL_SECONDS)
                 continue
@@ -84,11 +84,17 @@ async def run_intraday_loop():
                 order_id = open_long(symbol, score)
 
             elif score < settings.SCORE_SHORT_THRESHOLD and current_side != "short":
-                if current_side == "long":
-                    print(f"{Fore.YELLOW}[loop] Closing long{Style.RESET_ALL}")
-                    close_position(symbol)
-                print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f}){Style.RESET_ALL}")
-                order_id = open_short(symbol, score)
+                if settings.ASSET_CLASS == "crypto":
+                    # Crypto: no short selling — just close long if held
+                    if current_side == "long":
+                        print(f"{Fore.YELLOW}[loop] Score bearish, closing long (no crypto shorts){Style.RESET_ALL}")
+                        close_position(symbol)
+                else:
+                    if current_side == "long":
+                        print(f"{Fore.YELLOW}[loop] Closing long{Style.RESET_ALL}")
+                        close_position(symbol)
+                    print(f"{Fore.RED}[loop] Opening SHORT (score={score:+.3f}){Style.RESET_ALL}")
+                    order_id = open_short(symbol, score)
 
             # 6. Write signals and equity to DB
             await write_signals(symbol, signal_values, weights, score, now)

@@ -1,9 +1,13 @@
-import math
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 from src.config import settings
+
+
+def _tif() -> TimeInForce:
+    # Crypto requires GTC; stocks use DAY
+    return TimeInForce.GTC if settings.ASSET_CLASS == "crypto" else TimeInForce.DAY
 
 
 def get_trading_client() -> TradingClient:
@@ -46,7 +50,7 @@ def open_long(symbol: str, score: float) -> str | None:
             symbol=symbol,
             notional=settings.POSITION_SIZE_USD,
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=_tif(),
         )
         order = client.submit_order(request)
         return str(order.id)
@@ -63,7 +67,7 @@ def open_short(symbol: str, score: float) -> str | None:
             symbol=symbol,
             notional=settings.POSITION_SIZE_USD,
             side=OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=_tif(),
         )
         order = client.submit_order(request)
         return str(order.id)

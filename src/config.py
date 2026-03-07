@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     ALPACA_API_KEY: str = ""
     ALPACA_SECRET_KEY: str = ""
     ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
+    # "stock" or "crypto"
+    ASSET_CLASS: str = "stock"
     SYMBOL: str = "SPY"
     LOOP_INTERVAL_SECONDS: int = 60
     SCORE_LONG_THRESHOLD: float = 0.5
