@@ -4,18 +4,22 @@ import getDb from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  // Fetch prices (Binance public API, no auth)
+  // Fetch prices (Coinbase public API, no auth)
   let prices: unknown[] = [];
   try {
     const res = await fetch(
-      "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=120",
+      "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=300",
       { cache: "no-store" }
     );
-    const klines = await res.json();
-    prices = klines.map((k: unknown[]) => ({
-      time: k[0] as number,
-      close: parseFloat(k[4] as string),
-    }));
+    const klines: number[][] = await res.json();
+    // Coinbase returns [time_sec, low, high, open, close, volume], newest first
+    prices = klines
+      .reverse()
+      .slice(-120)
+      .map((k) => ({
+        time: k[0] * 1000,
+        close: k[4],
+      }));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
