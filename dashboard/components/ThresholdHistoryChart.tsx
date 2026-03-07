@@ -8,7 +8,7 @@ import {
 type WeightRow = {
   version: number;
   weights: Record<string, number>;
-  performance: Record<string, number> | null;
+  performance: Record<string, unknown> | null;
   is_active: boolean;
   created_at: string;
 };
