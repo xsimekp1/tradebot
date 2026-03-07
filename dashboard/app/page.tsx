@@ -69,7 +69,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
           <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Equity Curve</h2>
-          <EquityChart data={equity ?? []} />
+          <EquityChart data={Array.isArray(equity) ? equity : []} />
         </div>
 
         {/* Right column: score gauge + active model */}
@@ -115,11 +115,11 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
           <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Live Signals (last 10 bars)</h2>
-          <SignalsPanel data={signals ?? []} />
+          <SignalsPanel data={Array.isArray(signals) ? signals : []} />
         </div>
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
           <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Recent Trades</h2>
-          <TradesTable trades={trades ?? []} />
+          <TradesTable trades={Array.isArray(trades) ? trades : []} />
         </div>
       </div>
 
