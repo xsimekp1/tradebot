@@ -98,6 +98,7 @@ export default function Dashboard() {
               score={status?.currentScore ?? null}
               openPosition={status?.openPosition ?? null}
               signalValues={status?.signalValues ?? null}
+              weights={activeWeights?.weights ?? null}
             />
           </div>
 

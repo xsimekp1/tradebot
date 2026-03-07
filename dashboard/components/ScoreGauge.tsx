@@ -7,6 +7,7 @@ type Props = {
   score: number | null;
   openPosition: { side: string; entryPrice: number } | null;
   signalValues: Record<string, number> | null;
+  weights: Record<string, number> | null;
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -21,7 +22,7 @@ const SIGNAL_COLORS: Record<string, string> = {
   channel_slope: "#a855f7",
 };
 
-export function ScoreGauge({ score, openPosition, signalValues }: Props) {
+export function ScoreGauge({ score, openPosition, signalValues, weights }: Props) {
   const noData = score === null;
   const s = score ?? 0;
 
@@ -133,28 +134,38 @@ export function ScoreGauge({ score, openPosition, signalValues }: Props) {
 
       {/* Per-signal breakdown */}
       {signalValues && (
-        <div className="grid grid-cols-2 gap-1 pt-1">
+        <div className="space-y-0.5 pt-1">
+          {/* Header */}
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 text-[10px] text-gray-600 uppercase tracking-wide px-2 pb-1">
+            <span>Signal</span>
+            <span className="text-right">raw</span>
+            <span className="text-right">×w</span>
+            <span className="text-right w-10">contrib</span>
+          </div>
           {Object.entries(signalValues)
             .sort(([, a], [, b]) => Math.abs(Number(b)) - Math.abs(Number(a)))
             .map(([name, val]) => {
               const v = Number(val);
+              const w = weights?.[name] ?? null;
+              const contrib = w !== null ? v * w : null;
               const color = SIGNAL_COLORS[name] ?? "#6b7280";
+              const rawColor = v > 0 ? "#6ee7b7" : v < 0 ? "#fca5a5" : "#6b7280";
+              const contribColor = contrib !== null ? (contrib > 0 ? "#6ee7b7" : contrib < 0 ? "#fca5a5" : "#6b7280") : "#4b5563";
               return (
-                <div key={name} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-[#2a2d3a]/50">
-                  <span className="text-gray-400 capitalize">{name}</span>
-                  <span className="font-mono" style={{ color: v > 0 ? "#6ee7b7" : v < 0 ? "#fca5a5" : "#6b7280" }}>
+                <div key={name} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 items-center text-xs px-2 py-1 rounded bg-[#2a2d3a]/50">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-gray-400 capitalize truncate">{name.replace("_", " ")}</span>
+                  </div>
+                  <span className="font-mono text-right" style={{ color: rawColor }}>
                     {v >= 0 ? "+" : ""}{v.toFixed(3)}
                   </span>
-                  <div className="w-12 h-1 bg-[#2a2d3a] rounded-full overflow-hidden ml-1">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.abs(v) * 100}%`,
-                        marginLeft: v < 0 ? `${(1 - Math.abs(v)) * 100}%` : 0,
-                        backgroundColor: color,
-                      }}
-                    />
-                  </div>
+                  <span className="font-mono text-right text-gray-600 text-[10px]">
+                    {w !== null ? w.toFixed(3) : "—"}
+                  </span>
+                  <span className="font-mono text-right w-10" style={{ color: contribColor }}>
+                    {contrib !== null ? ((contrib >= 0 ? "+" : "") + contrib.toFixed(3)) : "—"}
+                  </span>
                 </div>
               );
             })}
