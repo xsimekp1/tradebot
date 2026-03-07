@@ -17,6 +17,8 @@ const SIGNAL_COLORS: Record<string, string> = {
   atr: "#f59e0b",
   volume: "#10b981",
   breakout: "#f43f5e",
+  channel_position: "#ec4899",
+  channel_slope: "#a855f7",
 };
 
 export function ScoreGauge({ score, openPosition, signalValues }: Props) {
