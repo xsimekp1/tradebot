@@ -46,6 +46,11 @@ async def run_intraday_loop():
         try:
             if settings.ASSET_CLASS == "stock" and not is_market_open():
                 print(f"{Fore.YELLOW}[loop] Market closed, waiting...{Style.RESET_ALL}")
+                try:
+                    account = get_account()
+                    await write_equity(account, now)
+                except Exception as e:
+                    print(f"{Fore.RED}[loop] Equity write error: {e}{Style.RESET_ALL}")
                 await asyncio.sleep(settings.LOOP_INTERVAL_SECONDS)
                 continue
 
