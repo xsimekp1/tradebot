@@ -314,6 +314,26 @@ export function PriceChart({ prices, trades }: Props) {
     };
   }
 
+  // Channel analysis - distance between support and resistance
+  let channelInfo: {
+    width: number;           // Absolute distance between lines
+    widthPct: number;        // Width as % of current price
+    pricePosition: number;   // 0 = at support, 1 = at resistance
+    distFromSupport: number; // Distance from support in $
+    distFromResistance: number; // Distance from resistance in $
+  } | null = null;
+
+  if (resistanceInfo && supportInfo) {
+    const width = resistanceInfo.price - supportInfo.price;
+    channelInfo = {
+      width,
+      widthPct: (width / currentPrice) * 100,
+      pricePosition: width > 0 ? (currentPrice - supportInfo.price) / width : 0.5,
+      distFromSupport: currentPrice - supportInfo.price,
+      distFromResistance: resistanceInfo.price - currentPrice,
+    };
+  }
+
   return (
     <div>
       {/* Line info indicators */}
@@ -470,6 +490,58 @@ export function PriceChart({ prices, trades }: Props) {
           ))}
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Channel Analysis */}
+      {channelInfo && (
+        <div className="mt-3 px-1">
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Channel Analysis</div>
+          <div className="bg-[#12141a] rounded-lg border border-[#2a2d3a] p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              {/* Channel width */}
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Channel Width</div>
+                <div className="text-white font-medium mt-0.5">
+                  ${channelInfo.width.toFixed(0)} <span className="text-gray-500">({channelInfo.widthPct.toFixed(2)}%)</span>
+                </div>
+              </div>
+
+              {/* Distance from Support */}
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">From Support</div>
+                <div className="text-emerald-400 font-medium mt-0.5">
+                  +${channelInfo.distFromSupport.toFixed(0)} <span className="text-gray-500">({((channelInfo.distFromSupport / currentPrice) * 100).toFixed(2)}%)</span>
+                </div>
+              </div>
+
+              {/* Distance from Resistance */}
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">From Resistance</div>
+                <div className="text-rose-400 font-medium mt-0.5">
+                  -${channelInfo.distFromResistance.toFixed(0)} <span className="text-gray-500">({((channelInfo.distFromResistance / currentPrice) * 100).toFixed(2)}%)</span>
+                </div>
+              </div>
+
+              {/* Position in channel */}
+              <div>
+                <div className="text-gray-500 text-[10px] uppercase">Position in Channel</div>
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-gradient-to-r from-emerald-500/30 to-rose-500/30 rounded-full relative">
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-indigo-400 rounded-full border border-white/50"
+                        style={{ left: `${Math.max(0, Math.min(100, channelInfo.pricePosition * 100))}%`, transform: 'translate(-50%, -50%)' }}
+                      />
+                    </div>
+                    <span className="text-white font-medium w-10 text-right">
+                      {(channelInfo.pricePosition * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
