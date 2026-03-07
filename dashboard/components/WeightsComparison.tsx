@@ -14,6 +14,7 @@ export function WeightsComparison({ weights }: { weights: Record<string, number>
   if (!weights) return <p className="text-gray-600 text-sm">No weights data</p>;
 
   const entries = Object.entries(weights)
+    .filter(([k]) => !k.startsWith("_"))
     .map(([k, v]) => [k, Number(v)] as [string, number])
     .filter(([, v]) => v > 0.005)
     .sort((a, b) => b[1] - a[1]);

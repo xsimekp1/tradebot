@@ -29,7 +29,7 @@ export function SignalEvolutionGrid({ rows }: { rows: WeightRow[] }) {
 
   // All signal names across all versions
   const signals = Array.from(
-    new Set(sorted.flatMap((r) => Object.keys(r.weights)))
+    new Set(sorted.flatMap((r) => Object.keys(r.weights).filter((k) => !k.startsWith("_"))))
   ).sort();
 
   return (
