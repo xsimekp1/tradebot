@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ResearchTable } from "@/components/ResearchTable";
 import { WeightsComparison } from "@/components/WeightsComparison";
 import { WalkForwardChart } from "@/components/WalkForwardChart";
+import { ScoreGauge } from "@/components/ScoreGauge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -20,8 +21,10 @@ type WeightRow = {
 export default function ResearchPage() {
   const { data: results, isLoading } = useSWR("/api/research", fetcher, { refreshInterval: 15_000 });
   const { data: weightsRaw } = useSWR("/api/weights", fetcher, { refreshInterval: 15_000 });
+  const { data: status } = useSWR("/api/status", fetcher, { refreshInterval: 15_000 });
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const weightHistory: WeightRow[] = Array.isArray(weightsRaw) ? weightsRaw : [];
+  const activeWeights = weightHistory.find((w) => w.is_active);
 
   const runs = Array.isArray(results) ? results : [];
   const walkForward = runs.filter((r) => r.strategy === "walk_forward");
@@ -38,6 +41,39 @@ export default function ResearchPage() {
         <a href="/" className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg">
           Live Dashboard
         </a>
+      </div>
+
+      {/* Same stat cards as main dashboard */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MiniStat label="Equity" value={status?.equity != null ? `$${Number(status.equity).toLocaleString("en", { minimumFractionDigits: 2 })}` : "—"} />
+        <MiniStat label="Daily P&L" value={status?.dailyPnl != null ? `${Number(status.dailyPnl) >= 0 ? "+" : ""}$${Number(status.dailyPnl).toFixed(2)}` : "—"} positive={Number(status?.dailyPnl ?? 0) >= 0} />
+        <MiniStat label="Total Trades" value={status?.totalTrades ?? "—"} />
+        <MiniStat label="Total P&L" value={status?.totalPnl != null ? `${Number(status.totalPnl) >= 0 ? "+" : ""}$${Number(status.totalPnl).toFixed(2)}` : "—"} positive={Number(status?.totalPnl ?? 0) >= 0} />
+      </div>
+
+      {/* Live score + active model side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Live Score</h2>
+          <ScoreGauge
+            score={status?.currentScore ?? null}
+            openPosition={status?.openPosition ?? null}
+            signalValues={status?.signalValues ?? null}
+          />
+        </div>
+        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Active Model</h2>
+            <p className="text-xs text-gray-600 mt-0.5">
+              {activeWeights ? `v${activeWeights.version} — weights currently used for scoring` : "defaults"}
+            </p>
+          </div>
+          {activeWeights ? (
+            <WeightsComparison weights={activeWeights.weights} />
+          ) : (
+            <p className="text-sm text-gray-600">No evolved model yet</p>
+          )}
+        </div>
       </div>
 
       {isLoading && (
@@ -161,6 +197,16 @@ export default function ResearchPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, positive }: { label: string; value: string | number; positive?: boolean }) {
+  const color = positive === undefined ? "text-white" : positive ? "text-green-400" : "text-red-400";
+  return (
+    <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-3">
+      <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
     </div>
   );
 }

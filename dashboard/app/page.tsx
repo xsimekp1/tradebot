@@ -8,6 +8,7 @@ import { TradesTable } from "@/components/TradesTable";
 import { WeightsBar } from "@/components/WeightsBar";
 import { StatusBar } from "@/components/StatusBar";
 import { WeightHistoryChart } from "@/components/WeightHistoryChart";
+import { ScoreGauge } from "@/components/ScoreGauge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const REFRESH = 30_000;
@@ -64,27 +65,49 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Equity chart + Weights */}
+      {/* Equity chart + Score + Weights */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
           <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Equity Curve</h2>
           <EquityChart data={equity ?? []} />
         </div>
-        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
-              Signal Weights {activeWeights ? `(v${activeWeights.version})` : "(defaults)"}
-            </h2>
-            {Array.isArray(weights) && weights.length > 0 && (
-              <button
-                onClick={() => setShowHistory(true)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded-lg"
-              >
-                History
-              </button>
-            )}
+
+        {/* Right column: score gauge + active model */}
+        <div className="space-y-4">
+          {/* Live score gauge */}
+          <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+            <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Live Score</h2>
+            <ScoreGauge
+              score={status?.currentScore ?? null}
+              openPosition={status?.openPosition ?? null}
+              signalValues={status?.signalValues ?? null}
+            />
           </div>
-          <WeightsBar weights={activeWeights?.weights ?? null} />
+
+          {/* Active model weights */}
+          <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+                  Active Model
+                </h2>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  {activeWeights
+                    ? `v${activeWeights.version} — weights used for scoring`
+                    : "defaults — no evolved model yet"}
+                </p>
+              </div>
+              {Array.isArray(weights) && weights.length > 0 && (
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded-lg shrink-0"
+                >
+                  History
+                </button>
+              )}
+            </div>
+            <WeightsBar weights={activeWeights?.weights ?? null} />
+          </div>
         </div>
       </div>
 
