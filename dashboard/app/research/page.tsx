@@ -94,13 +94,19 @@ export default function ResearchPage() {
         </div>
       )}
 
+      {/* Evolution performance chart */}
+      {weightHistory.length > 0 && (
+        <div className="space-y-4">
+          <WalkForwardChart rows={weightHistory} />
+        </div>
+      )}
+
       {/* Walk-forward section */}
       {walkForward.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
             Walk-Forward Validation ({walkForward.length} runs)
           </h2>
-          <WalkForwardChart runs={walkForward} />
           <ResearchTable runs={walkForward} onSelect={setSelected} selected={selected} />
         </div>
       )}
