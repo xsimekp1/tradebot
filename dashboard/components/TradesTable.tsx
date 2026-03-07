@@ -14,7 +14,7 @@ type Trade = {
 };
 
 export function TradesTable({ trades }: { trades: Trade[] }) {
-  if (!trades || trades.length === 0) {
+  if (!Array.isArray(trades) || trades.length === 0) {
     return (
       <div className="text-sm text-gray-600 text-center py-8">
         No trades yet

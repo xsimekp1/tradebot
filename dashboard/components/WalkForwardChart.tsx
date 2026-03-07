@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, ReferenceLine,
@@ -17,29 +18,33 @@ type WeightRow = {
 };
 
 export function WalkForwardChart({ rows }: { rows: WeightRow[] }) {
-  if (!rows.length) return null;
+  const dataRows = useMemo(() => {
+    if (!rows.length) return [];
 
-  // Filter to last 2 hours and sort by time ascending
-  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-  const recentRows = rows
-    .filter((r) => new Date(r.created_at).getTime() > twoHoursAgo)
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    // Filter to last 2 hours and sort by time ascending
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    const recentRows = rows
+      .filter((r) => new Date(r.created_at).getTime() > twoHoursAgo)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-  // If no data in last 2 hours, show all data (up to 20 points)
-  const dataRows = recentRows.length > 0 ? recentRows : rows.slice(0, 20).reverse();
+    // If no data in last 2 hours, show all data (up to 20 points)
+    return recentRows.length > 0 ? recentRows : rows.slice(0, 20).reverse();
+  }, [rows]);
 
-  const data = dataRows.map((r) => {
-    const ins = r.performance?.in_sample;
-    const oos = r.performance?.out_of_sample;
-    return {
-      time: new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      version: `v${r.version}`,
-      "In-sample": ins?.return_pct != null ? +ins.return_pct.toFixed(2) : null,
-      "Out-of-sample": oos?.return_pct != null ? +oos.return_pct.toFixed(2) : null,
-    };
-  });
+  const data = useMemo(() => {
+    return dataRows.map((r) => {
+      const ins = r.performance?.in_sample;
+      const oos = r.performance?.out_of_sample;
+      return {
+        time: new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        version: `v${r.version}`,
+        "In-sample": ins?.return_pct != null ? +ins.return_pct.toFixed(2) : null,
+        "Out-of-sample": oos?.return_pct != null ? +oos.return_pct.toFixed(2) : null,
+      };
+    });
+  }, [dataRows]);
 
-  if (data.length === 0) return null;
+  if (!data.length) return null;
 
   return (
     <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">

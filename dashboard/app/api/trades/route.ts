@@ -20,7 +20,7 @@ export async function GET() {
         closed_at,
         alpaca_order_id
       FROM trades
-      ORDER BY created_at DESC
+      ORDER BY opened_at DESC
       LIMIT 30
     `;
     return NextResponse.json(rows);
