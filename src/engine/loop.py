@@ -77,6 +77,8 @@ async def _recover_open_trade(symbol: str) -> str | None:
 async def run_intraday_loop():
     symbol = settings.SYMBOL
     print(f"{Fore.CYAN}[loop] Starting intraday loop for {symbol}{Style.RESET_ALL}")
+    _prev_support: float | None = None
+    _prev_resistance: float | None = None
 
     # Recover open trade from DB on startup (survives restarts)
     open_trade_id: str | None = await _recover_open_trade(symbol)
@@ -112,12 +114,16 @@ async def run_intraday_loop():
                 if isinstance(sig, ChannelPositionSignal) and sig.last_channel_info:
                     channel_info = sig.last_channel_info
                     ci = channel_info
+                    ds = f"  Δs={ci['support_price'] - _prev_support:+.2f}" if _prev_support else ""
+                    dr = f"  Δr={ci['resistance_price'] - _prev_resistance:+.2f}" if _prev_resistance else ""
                     print(
-                        f"[channel] support={ci['support_price']:.2f}  "
-                        f"resistance={ci['resistance_price']:.2f}  "
+                        f"[channel] support={ci['support_price']:.2f}{ds}  "
+                        f"resistance={ci['resistance_price']:.2f}{dr}  "
                         f"pos={ci['position_pct']:.1f}%  "
                         f"signal={signal_values.get('channel_position', 0):+.4f}"
                     )
+                    _prev_support = ci['support_price']
+                    _prev_resistance = ci['resistance_price']
                     break
 
             # 3. Load weights and score
