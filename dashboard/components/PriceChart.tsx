@@ -31,6 +31,120 @@ type TrendLine = {
   type: "support" | "resistance";
 };
 
+type DiagonalLine = {
+  startTime: number;
+  startPrice: number;
+  endTime: number;
+  endPrice: number;
+  slope: number;  // Price change per ms
+  points: number; // Number of points on line
+  type: "support" | "resistance";
+};
+
+// Find diagonal trend lines connecting 3+ pivot points
+function findDiagonalLines(
+  data: { time: number; close: number }[],
+  lookback: number = 3,
+  tolerance: number = 0.003 // 0.3% tolerance for point to be "on line"
+): DiagonalLine[] {
+  if (data.length < 10) return [];
+
+  // Find local maxima and minima
+  const maxima: { time: number; price: number; idx: number }[] = [];
+  const minima: { time: number; price: number; idx: number }[] = [];
+
+  for (let i = lookback; i < data.length - lookback; i++) {
+    const window = data.slice(i - lookback, i + lookback + 1).map((d) => d.close);
+    const current = data[i].close;
+    const min = Math.min(...window);
+    const max = Math.max(...window);
+
+    if (current === max) {
+      maxima.push({ time: data[i].time, price: current, idx: i });
+    }
+    if (current === min) {
+      minima.push({ time: data[i].time, price: current, idx: i });
+    }
+  }
+
+  const lines: DiagonalLine[] = [];
+
+  // Try to find lines through maxima (resistance)
+  const resistanceLines = findLinesThrough(maxima, data, tolerance, "resistance");
+  lines.push(...resistanceLines);
+
+  // Try to find lines through minima (support)
+  const supportLines = findLinesThrough(minima, data, tolerance, "support");
+  lines.push(...supportLines);
+
+  // Sort by number of points and return top lines
+  return lines
+    .filter((l) => l.points >= 3)
+    .sort((a, b) => b.points - a.points)
+    .slice(0, 4);
+}
+
+function findLinesThrough(
+  pivots: { time: number; price: number; idx: number }[],
+  data: { time: number; close: number }[],
+  tolerance: number,
+  type: "support" | "resistance"
+): DiagonalLine[] {
+  const lines: DiagonalLine[] = [];
+  if (pivots.length < 2) return lines;
+
+  // Try each pair of pivots as potential line
+  for (let i = 0; i < pivots.length - 1; i++) {
+    for (let j = i + 1; j < pivots.length; j++) {
+      const p1 = pivots[i];
+      const p2 = pivots[j];
+
+      // Calculate slope
+      const slope = (p2.price - p1.price) / (p2.time - p1.time);
+
+      // Count how many other pivots are on this line
+      let pointsOnLine = 2;
+      for (let k = 0; k < pivots.length; k++) {
+        if (k === i || k === j) continue;
+        const p = pivots[k];
+        const expectedPrice = p1.price + slope * (p.time - p1.time);
+        const diff = Math.abs(p.price - expectedPrice) / p.price;
+        if (diff < tolerance) {
+          pointsOnLine++;
+        }
+      }
+
+      if (pointsOnLine >= 3) {
+        // Extend line to current time
+        const lastTime = data[data.length - 1].time;
+        const endPrice = p1.price + slope * (lastTime - p1.time);
+
+        lines.push({
+          startTime: p1.time,
+          startPrice: p1.price,
+          endTime: lastTime,
+          endPrice: endPrice,
+          slope,
+          points: pointsOnLine,
+          type,
+        });
+      }
+    }
+  }
+
+  // Remove duplicate lines (similar slope and position)
+  const unique: DiagonalLine[] = [];
+  for (const line of lines) {
+    const isDuplicate = unique.some(
+      (u) => Math.abs(u.slope - line.slope) / Math.abs(u.slope || 0.0001) < 0.1 &&
+             Math.abs(u.startPrice - line.startPrice) / u.startPrice < 0.005
+    );
+    if (!isDuplicate) unique.push(line);
+  }
+
+  return unique;
+}
+
 // Find support/resistance levels with strength (number of touches)
 function findTrendLines(closes: number[], tolerance: number = 0.005): TrendLine[] {
   const levels: { price: number; type: "support" | "resistance"; touches: number }[] = [];
@@ -87,16 +201,18 @@ function findTrendLines(closes: number[], tolerance: number = 0.005): TrendLine[
 }
 
 export function PriceChart({ prices, trades }: Props) {
-  const { trendLines, currentPrice, nearbyLines, yMin, yMax } = useMemo(() => {
+  const { trendLines, diagonalLines, currentPrice, nearbyLines, nearbyDiagonals, yMin, yMax } = useMemo(() => {
     if (!prices || prices.length === 0) {
-      return { trendLines: [], currentPrice: 0, nearbyLines: [], yMin: 0, yMax: 0 };
+      return { trendLines: [], diagonalLines: [], currentPrice: 0, nearbyLines: [], nearbyDiagonals: [], yMin: 0, yMax: 0 };
     }
 
     const closes = prices.map((p) => p.close);
     const trendLines = findTrendLines(closes);
+    const diagonalLines = findDiagonalLines(prices);
     const currentPrice = closes[closes.length - 1];
+    const currentTime = prices[prices.length - 1].time;
 
-    // Find all lines within 1% of current price
+    // Find horizontal lines within 1.5% of current price
     const nearbyLines = trendLines
       .map((line) => {
         const dist = Math.abs(currentPrice - line.level);
@@ -104,13 +220,27 @@ export function PriceChart({ prices, trades }: Props) {
         const position = currentPrice > line.level ? "above" : currentPrice < line.level ? "below" : "at";
         return { line, distance: dist, distancePct, position };
       })
-      .filter((l) => l.distancePct < 1.5) // Only lines within 1.5%
+      .filter((l) => l.distancePct < 1.5)
+      .sort((a, b) => a.distance - b.distance);
+
+    // Find diagonal lines near current price
+    const nearbyDiagonals = diagonalLines
+      .map((line) => {
+        const linePrice = line.startPrice + line.slope * (currentTime - line.startTime);
+        const dist = Math.abs(currentPrice - linePrice);
+        const distPct = (dist / currentPrice) * 100;
+        const position = currentPrice > linePrice ? "above" : "below";
+        return { line, linePrice, distance: dist, distancePct, position };
+      })
+      .filter((l) => l.distancePct < 2)
       .sort((a, b) => a.distance - b.distance);
 
     return {
       trendLines,
+      diagonalLines,
       currentPrice,
       nearbyLines,
+      nearbyDiagonals,
       yMin: Math.min(...closes) * 0.9994,
       yMax: Math.max(...closes) * 1.0006,
     };
@@ -145,17 +275,29 @@ export function PriceChart({ prices, trades }: Props) {
     }
   });
 
-  const data = prices.map((p) => ({ time: p.time, close: p.close }));
+  // Build data with diagonal line values
+  const data = prices.map((p) => {
+    const row: Record<string, number | null> = { time: p.time, close: p.close };
+    // Add diagonal line values at each time point
+    diagonalLines.forEach((line, i) => {
+      if (p.time >= line.startTime) {
+        row[`diag${i}`] = line.startPrice + line.slope * (p.time - line.startTime);
+      } else {
+        row[`diag${i}`] = null;
+      }
+    });
+    return row;
+  });
 
   return (
     <div>
       {/* Nearby lines indicator */}
-      {nearbyLines.length > 0 && (
+      {(nearbyLines.length > 0 || nearbyDiagonals.length > 0) && (
         <div className="text-xs mb-2 px-1 space-y-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide">Nearby levels (within 1.5%)</div>
+          <div className="text-gray-500 text-[10px] uppercase tracking-wide">Nearby levels</div>
           <div className="flex flex-wrap gap-2">
+            {/* Horizontal levels */}
             {nearbyLines.map((nl, i) => {
-              const isAbove = nl.position === "above";
               const isBelow = nl.position === "below";
               const bgColor = isBelow ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30";
               const textColor = isBelow ? "text-green-400" : "text-red-400";
@@ -163,7 +305,7 @@ export function PriceChart({ prices, trades }: Props) {
               const isClose = nl.distancePct < 0.3;
               return (
                 <div
-                  key={i}
+                  key={`h-${i}`}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded border ${bgColor} ${isClose ? "ring-1 ring-yellow-500/50" : ""}`}
                 >
                   <span className={textColor}>{arrow}</span>
@@ -174,6 +316,31 @@ export function PriceChart({ prices, trades }: Props) {
                   </span>
                   <span className="text-gray-600 text-[10px]">
                     ({nl.line.strength}/5)
+                  </span>
+                </div>
+              );
+            })}
+            {/* Diagonal trend lines */}
+            {nearbyDiagonals.map((nd, i) => {
+              const isBelow = nd.position === "below";
+              const bgColor = isBelow ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30";
+              const textColor = isBelow ? "text-green-400" : "text-red-400";
+              const arrow = isBelow ? "↘" : "↗";
+              const slopeDir = nd.line.slope > 0 ? "↗" : "↘";
+              const isClose = nd.distancePct < 0.5;
+              return (
+                <div
+                  key={`d-${i}`}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded border ${bgColor} ${isClose ? "ring-1 ring-yellow-500/50" : ""}`}
+                >
+                  <span className={textColor}>{slopeDir}</span>
+                  <span className={textColor}>${(nd.linePrice / 1000).toFixed(2)}k</span>
+                  <span className="text-gray-500">|</span>
+                  <span className={isClose ? "text-yellow-400" : "text-gray-400"}>
+                    {nd.distancePct.toFixed(2)}%
+                  </span>
+                  <span className="text-gray-600 text-[10px]">
+                    ({nd.line.points}pt {nd.line.type === "support" ? "S" : "R"})
                   </span>
                 </div>
               );
@@ -209,6 +376,20 @@ export function PriceChart({ prices, trades }: Props) {
           formatter={(v: number) => [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, "BTC/USD"]}
         />
         <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+        {/* Diagonal trend lines */}
+        {diagonalLines.map((line, i) => (
+          <Line
+            key={`diag-${i}`}
+            type="linear"
+            dataKey={`diag${i}`}
+            stroke={line.type === "support" ? "#22c55e" : "#ef4444"}
+            strokeWidth={1 + line.points * 0.3}
+            strokeDasharray="8 4"
+            strokeOpacity={0.6 + line.points * 0.1}
+            dot={false}
+            connectNulls={false}
+          />
+        ))}
         {openTrades.map((t, i) => (
           <ReferenceLine
             key={i}
