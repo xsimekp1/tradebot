@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import {
-  ComposedChart, Line, XAxis, YAxis, Tooltip,
+  ComposedChart, Line, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, ReferenceLine, ReferenceDot,
 } from "recharts";
 
@@ -32,23 +32,18 @@ type ResistanceLine = {
   refTime: number;         // Reference time (start of data)
   score: number;           // Lower is better
   breakthroughs: number[]; // Indices of points that broke through
+  avgDistance: number;     // Average distance from line to price
 };
 
 /**
  * Find optimal resistance line above price data.
- *
- * Uses grid search to minimize: sum of distances from line to points,
- * with 10x penalty for points that break above the line.
- *
- * @param data - Array of {time, close} candles (using close as price)
- * @returns ResistanceLine with optimal slope, intercept, score, and breakthrough indices
+ * Uses grid search with 20x penalty for breakthroughs.
  */
 function findOptimalResistanceLine(
   data: { time: number; close: number }[]
 ): ResistanceLine | null {
   if (data.length < 10) return null;
 
-  // Find maximum price point as starting anchor
   let maxIdx = 0;
   let maxPrice = data[0].close;
   for (let i = 1; i < data.length; i++) {
@@ -63,9 +58,9 @@ function findOptimalResistanceLine(
   const timeRange = data[data.length - 1].time - refTime;
   const priceRange = maxPrice - Math.min(...data.map(d => d.close));
 
-  // Evaluate a candidate line and return its score + breakthroughs
-  function evaluateLine(slope: number, intercept: number): { score: number; breakthroughs: number[] } {
+  function evaluateLine(slope: number, intercept: number): { score: number; breakthroughs: number[]; avgDist: number } {
     let score = 0;
+    let totalDist = 0;
     const breakthroughs: number[] = [];
 
     for (let i = 0; i < data.length; i++) {
@@ -74,28 +69,24 @@ function findOptimalResistanceLine(
       const d = linePrice - p.close;
 
       if (d >= 0) {
-        // Point is below or on the line - normal distance
         score += d;
+        totalDist += d;
       } else {
-        // Point is above the line - 10x penalty
-        score += Math.abs(d) * 10;
+        score += Math.abs(d) * 20;
+        totalDist += Math.abs(d);
         breakthroughs.push(i);
       }
     }
 
-    return { score, breakthroughs };
+    return { score, breakthroughs, avgDist: totalDist / data.length };
   }
 
-  // Grid search parameters
-  // Slope range: from steep down to steep up (relative to price/time)
-  const slopeStep = (priceRange / timeRange) * 0.05; // 5% of max possible slope
-  const slopeMin = -priceRange / timeRange * 0.5;    // Max 50% drop over time range
-  const slopeMax = priceRange / timeRange * 0.5;     // Max 50% rise over time range
-
-  // Intercept offset range
-  const offsetStep = priceRange * 0.01;  // 1% of price range
-  const offsetMin = -priceRange * 0.1;   // Allow line to drop 10% below max
-  const offsetMax = priceRange * 0.2;    // Allow line to rise 20% above max
+  const slopeStep = (priceRange / timeRange) * 0.05;
+  const slopeMin = -priceRange / timeRange * 0.5;
+  const slopeMax = priceRange / timeRange * 0.5;
+  const offsetStep = priceRange * 0.01;
+  const offsetMin = -priceRange * 0.1;
+  const offsetMax = priceRange * 0.2;
 
   let bestResult: ResistanceLine = {
     slope: 0,
@@ -103,24 +94,22 @@ function findOptimalResistanceLine(
     refTime,
     score: Infinity,
     breakthroughs: [],
+    avgDistance: 0,
   };
 
-  // Grid search
   for (let slope = slopeMin; slope <= slopeMax; slope += slopeStep) {
-    // Base intercept: line passes through max point
     const baseInt = maxPrice - slope * (maxPoint.time - refTime);
 
     for (let offset = offsetMin; offset <= offsetMax; offset += offsetStep) {
       const intercept = baseInt + offset;
-      const { score, breakthroughs } = evaluateLine(slope, intercept);
+      const { score, breakthroughs, avgDist } = evaluateLine(slope, intercept);
 
       if (score < bestResult.score) {
-        bestResult = { slope, intercept, refTime, score, breakthroughs };
+        bestResult = { slope, intercept, refTime, score, breakthroughs, avgDistance: avgDist };
       }
     }
   }
 
-  // Fine-tune around best result with smaller steps
   const fineSlope = slopeStep * 0.2;
   const fineOffset = offsetStep * 0.2;
 
@@ -128,10 +117,10 @@ function findOptimalResistanceLine(
     for (let doff = -offsetStep * 2; doff <= offsetStep * 2; doff += fineOffset) {
       const slope = bestResult.slope + ds;
       const intercept = bestResult.intercept + doff;
-      const { score, breakthroughs } = evaluateLine(slope, intercept);
+      const { score, breakthroughs, avgDist } = evaluateLine(slope, intercept);
 
       if (score < bestResult.score) {
-        bestResult = { slope, intercept, refTime, score, breakthroughs };
+        bestResult = { slope, intercept, refTime, score, breakthroughs, avgDistance: avgDist };
       }
     }
   }
@@ -141,14 +130,13 @@ function findOptimalResistanceLine(
 
 /**
  * Find optimal support line below price data.
- * Mirror of resistance line: penalizes points that break below the line.
+ * Mirror of resistance line with 20x penalty for breakthroughs.
  */
 function findOptimalSupportLine(
   data: { time: number; close: number }[]
 ): ResistanceLine | null {
   if (data.length < 10) return null;
 
-  // Find minimum price point as starting anchor
   let minIdx = 0;
   let minPrice = data[0].close;
   for (let i = 1; i < data.length; i++) {
@@ -163,26 +151,27 @@ function findOptimalSupportLine(
   const timeRange = data[data.length - 1].time - refTime;
   const priceRange = Math.max(...data.map(d => d.close)) - minPrice;
 
-  function evaluateLine(slope: number, intercept: number): { score: number; breakthroughs: number[] } {
+  function evaluateLine(slope: number, intercept: number): { score: number; breakthroughs: number[]; avgDist: number } {
     let score = 0;
+    let totalDist = 0;
     const breakthroughs: number[] = [];
 
     for (let i = 0; i < data.length; i++) {
       const p = data[i];
       const linePrice = intercept + slope * (p.time - refTime);
-      const d = p.close - linePrice;  // Inverted: we want line below price
+      const d = p.close - linePrice;
 
       if (d >= 0) {
-        // Point is above the line - normal distance
         score += d;
+        totalDist += d;
       } else {
-        // Point is below the line - 10x penalty
-        score += Math.abs(d) * 10;
+        score += Math.abs(d) * 20;
+        totalDist += Math.abs(d);
         breakthroughs.push(i);
       }
     }
 
-    return { score, breakthroughs };
+    return { score, breakthroughs, avgDist: totalDist / data.length };
   }
 
   const slopeStep = (priceRange / timeRange) * 0.05;
@@ -198,6 +187,7 @@ function findOptimalSupportLine(
     refTime,
     score: Infinity,
     breakthroughs: [],
+    avgDistance: 0,
   };
 
   for (let slope = slopeMin; slope <= slopeMax; slope += slopeStep) {
@@ -205,15 +195,14 @@ function findOptimalSupportLine(
 
     for (let offset = offsetMin; offset <= offsetMax; offset += offsetStep) {
       const intercept = baseInt + offset;
-      const { score, breakthroughs } = evaluateLine(slope, intercept);
+      const { score, breakthroughs, avgDist } = evaluateLine(slope, intercept);
 
       if (score < bestResult.score) {
-        bestResult = { slope, intercept, refTime, score, breakthroughs };
+        bestResult = { slope, intercept, refTime, score, breakthroughs, avgDistance: avgDist };
       }
     }
   }
 
-  // Fine-tune
   const fineSlope = slopeStep * 0.2;
   const fineOffset = offsetStep * 0.2;
 
@@ -221,10 +210,10 @@ function findOptimalSupportLine(
     for (let doff = -offsetStep * 2; doff <= offsetStep * 2; doff += fineOffset) {
       const slope = bestResult.slope + ds;
       const intercept = bestResult.intercept + doff;
-      const { score, breakthroughs } = evaluateLine(slope, intercept);
+      const { score, breakthroughs, avgDist } = evaluateLine(slope, intercept);
 
       if (score < bestResult.score) {
-        bestResult = { slope, intercept, refTime, score, breakthroughs };
+        bestResult = { slope, intercept, refTime, score, breakthroughs, avgDistance: avgDist };
       }
     }
   }
@@ -242,7 +231,6 @@ export function PriceChart({ prices, trades }: Props) {
     const resistanceLine = findOptimalResistanceLine(prices);
     const supportLine = findOptimalSupportLine(prices);
 
-    // Extend Y axis to include the lines
     let yMinBase = Math.min(...closes);
     let yMaxBase = Math.max(...closes);
 
@@ -292,19 +280,29 @@ export function PriceChart({ prices, trades }: Props) {
     }
   });
 
-  // Build data with line values
+  // Calculate gradient zone thickness (avgDistance / 5)
+  const resistanceGradientHeight = resistanceLine ? resistanceLine.avgDistance / 5 : 0;
+  const supportGradientHeight = supportLine ? supportLine.avgDistance / 5 : 0;
+
+  // Build data with line values and gradient zones
   const data = prices.map((p) => {
     const row: Record<string, number | null> = { time: p.time, close: p.close };
     if (resistanceLine) {
-      row.resistance = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
+      const linePrice = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
+      row.resistance = linePrice;
+      row.resistanceGradientTop = linePrice;
+      row.resistanceGradientBottom = linePrice - resistanceGradientHeight;
     }
     if (supportLine) {
-      row.support = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
+      const linePrice = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
+      row.support = linePrice;
+      row.supportGradientBottom = linePrice;
+      row.supportGradientTop = linePrice + supportGradientHeight;
     }
     return row;
   });
 
-  // Calculate current distance to lines
+  // Current distance to lines
   const currentPrice = prices[prices.length - 1].close;
   const currentTime = prices[prices.length - 1].time;
 
@@ -372,79 +370,112 @@ export function PriceChart({ prices, trades }: Props) {
       )}
       <ResponsiveContainer width="100%" height={312}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
-        <XAxis
-          dataKey="time"
-          type="number"
-          scale="time"
-          domain={["dataMin", "dataMax"]}
-          tick={{ fill: "#6b7280", fontSize: 10 }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          tickCount={6}
-        />
-        <YAxis
-          tick={{ fill: "#6b7280", fontSize: 10 }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
-          domain={[yMin, yMax]}
-          width={52}
-        />
-        <Tooltip
-          contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }}
-          labelFormatter={(v) => new Date(v as number).toLocaleTimeString()}
-          formatter={(v: number, name: string) => {
-            const label = name === "close" ? "BTC/USD" : name === "resistance" ? "Resistance" : "Support";
-            return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
-          }}
-        />
-        <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-        {/* Optimized resistance line */}
-        {resistanceLine && (
-          <Line
-            type="linear"
-            dataKey="resistance"
-            stroke="#f43f5e"
-            strokeWidth={2}
-            strokeDasharray="8 4"
-            strokeOpacity={0.9}
-            dot={false}
-            connectNulls={true}
+          <defs>
+            <linearGradient id="resistanceGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.05} />
+            </linearGradient>
+            <linearGradient id="supportGradient" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
+          <XAxis
+            dataKey="time"
+            type="number"
+            scale="time"
+            domain={["dataMin", "dataMax"]}
+            tick={{ fill: "#6b7280", fontSize: 10 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            tickCount={6}
           />
-        )}
-        {/* Optimized support line */}
-        {supportLine && (
-          <Line
-            type="linear"
-            dataKey="support"
-            stroke="#10b981"
-            strokeWidth={2}
-            strokeDasharray="8 4"
-            strokeOpacity={0.9}
-            dot={false}
-            connectNulls={true}
+          <YAxis
+            tick={{ fill: "#6b7280", fontSize: 10 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+            domain={[yMin, yMax]}
+            width={52}
           />
-        )}
-        {openTrades.map((t, i) => (
-          <ReferenceLine
-            key={i}
-            y={Number(t.entry_price)}
-            stroke="#4ade80"
-            strokeDasharray="4 4"
-            strokeOpacity={0.6}
-            label={{ value: `open $${Number(t.entry_price).toFixed(0)}`, fill: "#4ade80", fontSize: 9, position: "insideTopLeft" }}
+          <Tooltip
+            contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }}
+            labelFormatter={(v) => new Date(v as number).toLocaleTimeString()}
+            formatter={(v: number, name: string) => {
+              if (name.includes("Gradient")) return null;
+              const label = name === "close" ? "BTC/USD" : name === "resistance" ? "Resistance" : "Support";
+              return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
+            }}
           />
-        ))}
-        {buyMarkers.map((b, i) => (
-          <ReferenceDot key={`buy-${i}`} x={b.time} y={b.price} r={0} shape={<BuyShape />} />
-        ))}
-        {sellMarkers.map((s, i) => (
-          <ReferenceDot key={`sell-${i}`} x={s.time} y={s.price} r={0} shape={<SellShape />} />
-        ))}
-      </ComposedChart>
-    </ResponsiveContainer>
+          {/* Resistance gradient zone (below line) */}
+          {resistanceLine && (
+            <Area
+              type="linear"
+              dataKey="resistanceGradientTop"
+              stroke="none"
+              fill="url(#resistanceGradient)"
+              fillOpacity={1}
+              baseLine={data.map(d => d.resistanceGradientBottom as number)}
+              isAnimationActive={false}
+            />
+          )}
+          {/* Support gradient zone (above line) */}
+          {supportLine && (
+            <Area
+              type="linear"
+              dataKey="supportGradientTop"
+              stroke="none"
+              fill="url(#supportGradient)"
+              fillOpacity={1}
+              baseLine={data.map(d => d.supportGradientBottom as number)}
+              isAnimationActive={false}
+            />
+          )}
+          <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+          {/* Resistance line */}
+          {resistanceLine && (
+            <Line
+              type="linear"
+              dataKey="resistance"
+              stroke="#f43f5e"
+              strokeWidth={2}
+              strokeOpacity={0.9}
+              dot={false}
+              connectNulls={true}
+            />
+          )}
+          {/* Support line */}
+          {supportLine && (
+            <Line
+              type="linear"
+              dataKey="support"
+              stroke="#10b981"
+              strokeWidth={2}
+              strokeOpacity={0.9}
+              dot={false}
+              connectNulls={true}
+            />
+          )}
+          {openTrades.map((t, i) => (
+            <ReferenceLine
+              key={i}
+              y={Number(t.entry_price)}
+              stroke="#4ade80"
+              strokeDasharray="4 4"
+              strokeOpacity={0.6}
+              label={{ value: `open $${Number(t.entry_price).toFixed(0)}`, fill: "#4ade80", fontSize: 9, position: "insideTopLeft" }}
+            />
+          ))}
+          {buyMarkers.map((b, i) => (
+            <ReferenceDot key={`buy-${i}`} x={b.time} y={b.price} r={0} shape={<BuyShape />} />
+          ))}
+          {sellMarkers.map((s, i) => (
+            <ReferenceDot key={`sell-${i}`} x={s.time} y={s.price} r={0} shape={<SellShape />} />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
