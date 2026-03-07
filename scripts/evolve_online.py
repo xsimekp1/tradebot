@@ -245,6 +245,23 @@ def mutate(weights: dict, sigma: float) -> dict:
 def evolve_once(symbol: str, n_mutations: int, sigma: float):
     current_weights, version = load_active_weights()
 
+    # If new signals were added since the last saved version, give them a small
+    # starting weight so evolution can explore them without resetting everything.
+    new_signals = [n for n in SIGNAL_NAMES if n not in current_weights]
+    if new_signals:
+        print(f"{Fore.YELLOW}  New signals detected: {new_signals} — seeding with small weights{Style.RESET_ALL}")
+        seed = 0.02  # small initial weight per new signal
+        for n in new_signals:
+            current_weights[n] = seed
+        total = sum(current_weights.values())
+        current_weights = {k: v / total for k, v in current_weights.items()}
+
+    # Drop stale signals that no longer exist in ALL_SIGNALS
+    current_weights = {k: v for k, v in current_weights.items() if k in SIGNAL_NAMES}
+    total = sum(current_weights.values())
+    if total > 0:
+        current_weights = {k: v / total for k, v in current_weights.items()}
+
     print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}){Style.RESET_ALL}")
     top_keys = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top_keys if current_weights[k] > 0.01))
