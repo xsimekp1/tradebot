@@ -54,9 +54,11 @@ def open_long(symbol: str, score: float, notional: float | None = None) -> str |
     """Open a long (buy) position. Returns order ID or None."""
     client = get_trading_client()
     try:
+        # Round notional to 2 decimal places (Alpaca requirement)
+        notional_value = round(notional or settings.POSITION_SIZE_USD, 2)
         request = MarketOrderRequest(
             symbol=symbol,
-            notional=notional or settings.POSITION_SIZE_USD,
+            notional=notional_value,
             side=OrderSide.BUY,
             time_in_force=_tif(),
         )
@@ -71,9 +73,11 @@ def open_short(symbol: str, score: float, notional: float | None = None) -> str 
     """Open a short (sell) position. Returns order ID or None."""
     client = get_trading_client()
     try:
+        # Round notional to 2 decimal places (Alpaca requirement)
+        notional_value = round(notional or settings.POSITION_SIZE_USD, 2)
         request = MarketOrderRequest(
             symbol=symbol,
-            notional=notional or settings.POSITION_SIZE_USD,
+            notional=notional_value,
             side=OrderSide.SELL,
             time_in_force=_tif(),
         )
