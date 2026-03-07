@@ -10,8 +10,12 @@ def save_backtest(record: dict):
     """Save a backtest result using a plain sync psycopg connection."""
     import psycopg
 
-    # Convert asyncpg URL to plain psycopg URL
-    db_url = settings.DATABASE_URL_ASYNC.replace("postgresql+asyncpg://", "postgresql://")
+    # Convert asyncpg URL to plain psycopg URL (ssl= → sslmode=)
+    db_url = (
+        settings.DATABASE_URL_ASYNC
+        .replace("postgresql+asyncpg://", "postgresql://")
+        .replace("?ssl=require", "?sslmode=require")
+    )
 
     with psycopg.connect(db_url) as conn:
         conn.execute(

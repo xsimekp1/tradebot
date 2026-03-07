@@ -8,9 +8,20 @@ import { WalkForwardChart } from "@/components/WalkForwardChart";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+type WeightRow = {
+  id: string;
+  version: number;
+  weights: Record<string, number>;
+  performance: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at: string;
+};
+
 export default function ResearchPage() {
   const { data: results, isLoading } = useSWR("/api/research", fetcher, { refreshInterval: 15_000 });
+  const { data: weightsRaw } = useSWR("/api/weights", fetcher, { refreshInterval: 15_000 });
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const weightHistory: WeightRow[] = Array.isArray(weightsRaw) ? weightsRaw : [];
 
   const runs = Array.isArray(results) ? results : [];
   const walkForward = runs.filter((r) => r.strategy === "walk_forward");
@@ -64,6 +75,54 @@ export default function ResearchPage() {
             Optimization Runs ({optimized.length} runs)
           </h2>
           <ResearchTable runs={optimized} onSelect={setSelected} selected={selected} />
+        </div>
+      )}
+
+      {/* Evolution history */}
+      {weightHistory.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            Strategy Evolution ({weightHistory.length} versions)
+          </h2>
+          <div className="space-y-3">
+            {weightHistory.map((row) => {
+              const oos = (row.performance as Record<string, Record<string, number>> | null)?.out_of_sample;
+              const sigma = (row.performance as Record<string, number> | null)?.sigma;
+              return (
+                <div
+                  key={row.id}
+                  className={`bg-[#1a1d27] rounded-xl border p-4 ${row.is_active ? "border-indigo-500/50" : "border-[#2a2d3a]"}`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <span className="text-sm font-semibold text-white">
+                        v{row.version}
+                      </span>
+                      {row.is_active && (
+                        <span className="ml-2 text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">active</span>
+                      )}
+                      <span className="ml-3 text-xs text-gray-500">
+                        {new Date(row.created_at).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      {sigma != null && (
+                        <span className="ml-2 text-xs text-gray-600">σ={sigma}</span>
+                      )}
+                    </div>
+                    {oos && (
+                      <div className="flex gap-4 text-xs font-mono">
+                        <span className={oos.return_pct >= 0 ? "text-green-400" : "text-red-400"}>
+                          {oos.return_pct >= 0 ? "+" : ""}{Number(oos.return_pct).toFixed(2)}% OOS
+                        </span>
+                        <span className="text-gray-400">Sharpe {Number(oos.sharpe).toFixed(2)}</span>
+                        <span className="text-gray-400">WR {Number(oos.win_rate).toFixed(1)}%</span>
+                      </div>
+                    )}
+                  </div>
+                  <WeightsComparison weights={row.weights} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
