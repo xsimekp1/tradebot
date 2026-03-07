@@ -8,6 +8,7 @@ import { TradesTable } from "@/components/TradesTable";
 import { WeightsBar } from "@/components/WeightsBar";
 import { StatusBar } from "@/components/StatusBar";
 import { WeightHistoryChart } from "@/components/WeightHistoryChart";
+import { ThresholdHistoryChart } from "@/components/ThresholdHistoryChart";
 import { ScoreGauge } from "@/components/ScoreGauge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -152,6 +153,10 @@ export default function Dashboard() {
               </button>
             </div>
             <WeightHistoryChart rows={Array.isArray(weights) ? weights : []} />
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Threshold History</h3>
+              <ThresholdHistoryChart rows={Array.isArray(weights) ? weights : []} />
+            </div>
           </div>
         </div>
       )}
