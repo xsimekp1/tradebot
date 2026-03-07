@@ -269,7 +269,7 @@ export function PriceChart({ prices, trades }: Props) {
           </div>
         </div>
       )}
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={312}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
         <XAxis
