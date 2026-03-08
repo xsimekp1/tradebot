@@ -12,3 +12,4 @@ aiohttp
 colorama
 python-dotenv
 tqdm
+httpx>=0.25.0
