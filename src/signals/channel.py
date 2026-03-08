@@ -64,11 +64,18 @@ def find_optimal_resistance_line(
         local_slope_range = price_range / n * 0.1  # Smaller range for local search
         local_offset_range = price_range * 0.05
 
+        # Rotate around pivot at 1/3 from current bar (2/3 from start of window)
+        # This avoids rotating around bar 0 (600 bars ago) where slope changes
+        # cause huge shifts at the current bar.
+        pivot_idx = n - n // 3
+        pivot_val = adjusted_intercept + prev_slope * pivot_idx
+
         for slope_i in range(5):
             slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
             for offset_i in range(5):
                 offset = -local_offset_range + (2 * local_offset_range * offset_i / 4)
-                intercept = adjusted_intercept + offset
+                # Anchor line at pivot point — different slopes pass through same region
+                intercept = (pivot_val + offset) - slope * pivot_idx
 
                 score, avg_dist = evaluate(slope, intercept)
                 if score < best_score:
@@ -155,11 +162,15 @@ def find_optimal_support_line(
         local_slope_range = price_range / n * 0.1
         local_offset_range = price_range * 0.05
 
+        # Rotate around pivot at 1/3 from current bar (2/3 from start of window)
+        pivot_idx = n - n // 3
+        pivot_val = adjusted_intercept + prev_slope * pivot_idx
+
         for slope_i in range(5):
             slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
             for offset_i in range(5):
                 offset = -local_offset_range + (2 * local_offset_range * offset_i / 4)
-                intercept = adjusted_intercept + offset
+                intercept = (pivot_val + offset) - slope * pivot_idx
 
                 score, avg_dist = evaluate(slope, intercept)
                 if score < best_score:
