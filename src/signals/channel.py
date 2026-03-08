@@ -36,13 +36,18 @@ def find_optimal_resistance_line(
         return 0.0, max_price, 0.0
 
     indices = np.arange(n)
+    # Time weights: 0 at start (old data) → 1 at end (recent data)
+    time_weights = np.linspace(0, 1, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Returns (score, avg_dist) for a given line."""
+        """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
         line_values = intercept + slope * indices
         diffs = line_values - prices
         positive = diffs >= 0
-        score = np.sum(diffs[positive]) + np.sum(np.abs(diffs[~positive]) * penalty)
+        # Apply time weights to distances
+        weighted_above = diffs[positive] * time_weights[positive]
+        weighted_below = np.abs(diffs[~positive]) * penalty * time_weights[~positive]
+        score = np.sum(weighted_above) + np.sum(weighted_below)
         avg_dist = np.mean(np.abs(diffs))
         return score, avg_dist
 
@@ -123,13 +128,18 @@ def find_optimal_support_line(
         return 0.0, min_price, 0.0
 
     indices = np.arange(n)
+    # Time weights: 0 at start (old data) → 1 at end (recent data)
+    time_weights = np.linspace(0, 1, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Returns (score, avg_dist) for a given line."""
+        """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
         line_values = intercept + slope * indices
         diffs = prices - line_values  # Inverted: price above line is good
         positive = diffs >= 0
-        score = np.sum(diffs[positive]) + np.sum(np.abs(diffs[~positive]) * penalty)
+        # Apply time weights to distances
+        weighted_above = diffs[positive] * time_weights[positive]
+        weighted_below = np.abs(diffs[~positive]) * penalty * time_weights[~positive]
+        score = np.sum(weighted_above) + np.sum(weighted_below)
         avg_dist = np.mean(np.abs(diffs))
         return score, avg_dist
 
