@@ -160,7 +160,16 @@ async def run_intraday_loop():
                     open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
 
             elif score < -threshold and open_trade_id is not None and current_side == "long":
-                pnl = (current_price - position["avg_entry_price"]) * position["qty"] if position else 0.0
+                ALPACA_FEE_RATE = 0.0025  # 0.25% per side for crypto market orders
+                if position:
+                    qty = position["qty"]
+                    avg_entry = position["avg_entry_price"]
+                    pnl_price = (current_price - avg_entry) * qty
+                    fee_open = avg_entry * qty * ALPACA_FEE_RATE
+                    fee_close = current_price * qty * ALPACA_FEE_RATE
+                    pnl = pnl_price - fee_open - fee_close
+                else:
+                    pnl = 0.0
                 await write_trade_close(open_trade_id, current_price, pnl, now)
                 open_trade_id = None
                 print(f"{Fore.YELLOW}[loop] → CLOSE LONG  score={score:+.3f} < -{threshold:.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
