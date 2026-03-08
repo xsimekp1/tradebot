@@ -21,8 +21,20 @@ type WeightRow = {
 export default function ResearchPage() {
   const { data: weightsRaw } = useSWR("/api/weights", fetcher, { refreshInterval: 15_000 });
   const { data: status } = useSWR("/api/status", fetcher, { refreshInterval: 15_000 });
+  const { data: evolStats } = useSWR("/api/evolution-stats", fetcher, { refreshInterval: 15_000 });
   const weightHistory: WeightRow[] = Array.isArray(weightsRaw) ? weightsRaw : [];
   const activeWeights = weightHistory.find((w) => w.is_active);
+
+  // Format relative time
+  const formatRelativeTime = (dateStr: string | null) => {
+    if (!dateStr) return "—";
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
 
   return (
     <div className="min-h-screen bg-[#0f1117] text-gray-100 p-4 space-y-6">
@@ -43,6 +55,30 @@ export default function ResearchPage() {
         <MiniStat label="Daily P&L" value={status?.dailyPnl != null ? `${Number(status.dailyPnl) >= 0 ? "+" : ""}$${Number(status.dailyPnl).toFixed(2)}` : "—"} positive={Number(status?.dailyPnl ?? 0) >= 0} />
         <MiniStat label="Total Trades" value={status?.totalTrades ?? "—"} />
         <MiniStat label="Total P&L" value={status?.totalPnl != null ? `${Number(status.totalPnl) >= 0 ? "+" : ""}$${Number(status.totalPnl).toFixed(2)}` : "—"} positive={Number(status?.totalPnl ?? 0) >= 0} />
+      </div>
+
+      {/* Evolution stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MiniStat
+          label="Mutation Success"
+          value={evolStats?.successRate != null ? `${evolStats.successRate}%` : "—"}
+          sub={evolStats?.totalRuns ? `${evolStats.successfulMutations}/${evolStats.totalRuns} cycles` : undefined}
+        />
+        <MiniStat
+          label="Current Streak"
+          value={evolStats?.currentStreak ?? "—"}
+          sub={evolStats?.streakType === "wins" ? "consecutive wins" : evolStats?.streakType === "no_change" ? "no change" : undefined}
+          positive={evolStats?.streakType === "wins"}
+        />
+        <MiniStat
+          label="Last Model Change"
+          value={formatRelativeTime(evolStats?.lastChangeAt)}
+        />
+        <MiniStat
+          label="Avg Improvement"
+          value={evolStats?.avgImprovement != null ? `+${evolStats.avgImprovement} Sharpe` : "—"}
+          positive={evolStats?.avgImprovement > 0}
+        />
       </div>
 
       {/* Live score + active model side by side */}
@@ -133,12 +169,13 @@ export default function ResearchPage() {
   );
 }
 
-function MiniStat({ label, value, positive }: { label: string; value: string | number; positive?: boolean }) {
+function MiniStat({ label, value, positive, sub }: { label: string; value: string | number; positive?: boolean; sub?: string }) {
   const color = positive === undefined ? "text-white" : positive ? "text-green-400" : "text-red-400";
   return (
     <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-3">
       <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
     </div>
   );
 }

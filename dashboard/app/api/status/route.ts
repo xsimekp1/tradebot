@@ -28,11 +28,9 @@ export async function GET() {
              COUNT(*) FILTER (WHERE pnl > 0) AS winners
       FROM trades WHERE closed_at IS NOT NULL
     `;
-    const [equityRange] = await sql`
-      SELECT MAX(total_equity) - MIN(total_equity) AS range,
-             (SELECT total_equity FROM equity_curve ORDER BY timestamp DESC LIMIT 1) -
-             (SELECT total_equity FROM equity_curve ORDER BY timestamp ASC  LIMIT 1) AS total_pnl
-      FROM equity_curve
+    const [totalPnlRow] = await sql`
+      SELECT COALESCE(SUM(pnl), 0) AS total_pnl
+      FROM trades WHERE closed_at IS NOT NULL
     `;
 
     // Current composite score = sum of score_contributions at latest bar
@@ -64,7 +62,7 @@ export async function GET() {
       equityTimestamp: latestEquity?.timestamp ?? null,
       totalTrades: Number(tradeCount?.total ?? 0),
       winners: Number(tradeCount?.winners ?? 0),
-      totalPnl: Number(equityRange?.total_pnl ?? 0),
+      totalPnl: Number(totalPnlRow?.total_pnl ?? 0),
       currentScore: scoreRow?.score != null ? Number(scoreRow.score) : null,
       signalValues: scoreRow?.signal_values ?? null,
       openPosition: openPos ? { side: openPos.side, entryPrice: Number(openPos.entry_price) } : null,

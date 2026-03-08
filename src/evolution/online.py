@@ -52,6 +52,43 @@ def load_active_weights() -> tuple[dict, int, float]:
     return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD
 
 
+def log_evolution_result(
+    symbol: str,
+    version_before: int,
+    version_after: int | None,
+    current_sharpe: float,
+    best_sharpe: float,
+    mutations_tried: int,
+    model_changed: bool,
+) -> None:
+    """Log evolution cycle result to database for tracking success rate."""
+    import psycopg
+    improvement = best_sharpe - current_sharpe if model_changed else None
+    try:
+        with psycopg.connect(_db_url()) as conn:
+            conn.execute(
+                """
+                INSERT INTO evolution_results
+                (symbol, version_before, version_after, current_sharpe, best_sharpe,
+                 mutations_tried, model_changed, improvement)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    symbol,
+                    version_before,
+                    version_after,
+                    round(current_sharpe, 6) if current_sharpe else None,
+                    round(best_sharpe, 6) if best_sharpe else None,
+                    mutations_tried,
+                    model_changed,
+                    round(improvement, 6) if improvement else None,
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"{Fore.YELLOW}Evolution result logging failed: {e}{Style.RESET_ALL}")
+
+
 def save_weights(weights: dict, version: int, performance: dict, threshold: float) -> None:
     import psycopg
     payload = {k: round(v, 4) for k, v in weights.items()}
@@ -299,6 +336,15 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     if best["label"] == "current":
         print(f"\n  {Fore.YELLOW}Current strategy is best — no update.{Style.RESET_ALL}")
         print(f"  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")
+        log_evolution_result(
+            symbol=symbol,
+            version_before=version,
+            version_after=None,
+            current_sharpe=current_oos["sharpe"],
+            best_sharpe=current_oos["sharpe"],
+            mutations_tried=n_mutations,
+            model_changed=False,
+        )
         return
 
     best_thr = best["threshold"]
@@ -313,6 +359,15 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
          "evolution_duration_sec": round(evolution_duration, 1),
          "signal_computation_sec": round(signal_duration, 1)},
         best_thr,
+    )
+    log_evolution_result(
+        symbol=symbol,
+        version_before=version,
+        version_after=new_version,
+        current_sharpe=current_oos["sharpe"],
+        best_sharpe=best["oos"]["sharpe"],
+        mutations_tried=n_mutations,
+        model_changed=True,
     )
 
     print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, threshold={best_thr:.3f}):{Style.RESET_ALL}")

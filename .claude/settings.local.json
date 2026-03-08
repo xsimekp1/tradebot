@@ -11,7 +11,12 @@
       "Bash(npx tsc:*)",
       "Bash(npx vercel:*)",
       "Bash(curl:*)",
-      "Bash(vercel logs:*)"
+      "Bash(vercel logs:*)",
+      "Bash(git stash:*)",
+      "Bash(git stash pop:*)",
+      "Bash(npm run build:*)",
+      "Bash(powershell -Command \"npm run build 2>&1 | Select-Object -First 80\")",
+      "WebSearch"
     ]
   }
 }
