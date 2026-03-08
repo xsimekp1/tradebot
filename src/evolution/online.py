@@ -205,16 +205,18 @@ def compute_signal_matrix(df, label: str = "") -> np.ndarray:
 
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
-             allow_short: bool = False) -> dict:
+             allow_short: bool = False, record_trades: bool = False) -> dict:
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
 
     prices = df["close"].values
+    timestamps = [str(t) for t in df.index]
     capital = 10_000.0
     pos_size = 1_000.0
     cash = capital
     position = None
     trades: list[float] = []
+    trades_log: list[dict] = []
     equity = np.full(len(df), capital, dtype=np.float64)
 
     for i in range(LOOKBACK, len(df)):
@@ -226,19 +228,27 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 qty = pos_size / price
                 cash -= pos_size
                 position = {"side": "long", "entry": price, "qty": qty, "idx": i}
+                if record_trades:
+                    trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i]})
             elif allow_short and score < short_thr:
                 qty = pos_size / price
                 cash += pos_size
                 position = {"side": "short", "entry": price, "qty": qty, "idx": i}
+                if record_trades:
+                    trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i]})
         elif position["side"] == "long" and score < short_thr:
             pnl = (price - position["entry"]) * position["qty"]
             cash += pos_size + pnl
             trades.append(pnl)
+            if record_trades:
+                trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2)})
             position = None
         elif position["side"] == "short" and score > long_thr:
             pnl = (position["entry"] - price) * position["qty"]
             cash -= pos_size - pnl
             trades.append(pnl)
+            if record_trades:
+                trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2)})
             position = None
 
         if position:
@@ -270,7 +280,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     sharpe = (daily_ret.mean() / std * (252 ** 0.5)) if std > 0 else 0.0
     pf = abs(winners.sum() / losers.sum()) if losers.sum() != 0 else 999.0
 
-    return {
+    result = {
         "return_pct": round(ret, 4),
         "sharpe": round(sharpe, 4),
         "num_trades": int(len(pnls)),
@@ -278,6 +288,16 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "profit_factor": round(min(pf, 999.0), 4),
         "max_dd": round(max_dd, 4),
     }
+
+    if record_trades:
+        # Downsample equity to max 300 points for storage
+        step = max(1, len(eq) // 300)
+        ts_slice = timestamps[LOOKBACK::step]
+        eq_slice = eq[::step].tolist()
+        result["equity_curve"] = [{"ts": ts_slice[i], "eq": round(eq_slice[i], 2)} for i in range(min(len(ts_slice), len(eq_slice)))]
+        result["trades_log"] = trades_log
+
+    return result
 
 
 # ── Mutation ──────────────────────────────────────────────────────────────────
@@ -371,11 +391,12 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
 
     best_thr = best["threshold"]
     is_stats = simulate(df_train, mat_train, best["arr"], best_thr, -best_thr)
+    best_oos_full = simulate(df_test, mat_test, best["arr"], best_thr, -best_thr, record_trades=True)
     new_version = version + 1
     save_weights(
         best["weights"],
         new_version,
-        {"in_sample": is_stats, "out_of_sample": best["oos"],
+        {"in_sample": is_stats, "out_of_sample": best_oos_full,
          "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma,
          "threshold": best_thr,
          "evolution_duration_sec": round(evolution_duration, 1),

@@ -6,6 +6,7 @@ import { WalkForwardChart } from "@/components/WalkForwardChart";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { SignalEvolutionGrid } from "@/components/SignalEvolutionGrid";
 import { ThresholdHistoryChart } from "@/components/ThresholdHistoryChart";
+import { BacktestMiniChart } from "@/components/BacktestMiniChart";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -22,6 +23,7 @@ export default function ResearchPage() {
   const { data: weightsRaw } = useSWR("/api/weights", fetcher, { refreshInterval: 15_000 });
   const { data: status } = useSWR("/api/status", fetcher, { refreshInterval: 15_000 });
   const { data: evolStats } = useSWR("/api/evolution-stats", fetcher, { refreshInterval: 15_000 });
+  const { data: backtestData } = useSWR("/api/backtest-chart", fetcher, { refreshInterval: 60_000 });
   const weightHistory: WeightRow[] = Array.isArray(weightsRaw) ? weightsRaw : [];
   const activeWeights = weightHistory.find((w) => w.is_active);
 
@@ -89,6 +91,7 @@ export default function ResearchPage() {
             score={status?.currentScore ?? null}
             openPosition={status?.openPosition ?? null}
             signalValues={status?.signalValues ?? null}
+            weights={activeWeights?.weights ?? null}
           />
         </div>
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
@@ -164,6 +167,15 @@ export default function ResearchPage() {
         </div>
       )}
 
+      {/* Best backtest OOS chart */}
+      {backtestData?.equityCurve && (
+        <BacktestMiniChart
+          equityCurve={backtestData.equityCurve}
+          trades={backtestData.trades ?? []}
+          stats={backtestData.stats}
+          version={backtestData.version}
+        />
+      )}
 
     </div>
   );
