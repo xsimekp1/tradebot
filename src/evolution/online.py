@@ -13,7 +13,7 @@ from colorama import Fore, Style
 from src.config import settings
 from src.signals import ALL_SIGNALS, make_signals
 
-LOOKBACK = 100
+LOOKBACK = 600  # Must be >= max signal lookback (channel uses 600)
 TRAIN_WEEKS = 4
 TEST_DAYS = 7
 SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
