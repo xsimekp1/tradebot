@@ -52,6 +52,27 @@ def load_active_weights() -> tuple[dict, int, float]:
     return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD
 
 
+def _ensure_evolution_results_table(conn) -> None:
+    """Create evolution_results table if it doesn't exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS evolution_results (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            symbol VARCHAR(20) NOT NULL,
+            version_before INTEGER NOT NULL,
+            version_after INTEGER,
+            current_sharpe NUMERIC(10, 6),
+            best_sharpe NUMERIC(10, 6),
+            mutations_tried INTEGER NOT NULL,
+            model_changed BOOLEAN NOT NULL,
+            improvement NUMERIC(10, 6),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_evolution_results_created_at ON evolution_results(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_evolution_results_model_changed ON evolution_results(model_changed)")
+    conn.commit()
+
+
 def log_evolution_result(
     symbol: str,
     version_before: int,
@@ -66,6 +87,7 @@ def log_evolution_result(
     improvement = best_sharpe - current_sharpe if model_changed else None
     try:
         with psycopg.connect(_db_url()) as conn:
+            _ensure_evolution_results_table(conn)
             conn.execute(
                 """
                 INSERT INTO evolution_results
