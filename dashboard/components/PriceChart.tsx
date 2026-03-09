@@ -278,7 +278,8 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     // Calculate rolling VWAP
     const vwapData = calculateVWAP(prices);
 
-    // Use backend lines if available (same data the bot actually trades on)
+    // ONLY use backend lines - no frontend fallback to avoid "jump" on page load
+    // The bot uses Alpaca 1-min data, frontend has Coinbase 5-min data = different results
     let resistanceLine: ResistanceLine | null = null;
     let supportLine: ResistanceLine | null = null;
 
@@ -307,11 +308,8 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
         breakthroughs: [],
         avgDistance: 0,
       };
-    } else {
-      // Fallback: frontend grid search (no backend data yet)
-      resistanceLine = findOptimalResistanceLine(prices);
-      supportLine = findOptimalSupportLine(prices);
     }
+    // No else branch - if backend data not available, lines stay null (no display)
 
     if (resistanceLine) {
       const endPrice = resistanceLine.intercept + resistanceLine.slope * (prices[prices.length - 1].time - resistanceLine.refTime);

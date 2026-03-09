@@ -73,7 +73,14 @@ export default function Dashboard() {
       {/* Price chart */}
       <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
         <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
-          BTC/USD · 5m  <span className="text-gray-600 font-normal normal-case">▲ buy &nbsp; ▼ sell &nbsp; — open position</span>
+          BTC/USD · 1m · {priceData?.source === "alpaca" ? (
+            <span className="text-indigo-400">Alpaca</span>
+          ) : priceData?.source === "coinbase-fallback" ? (
+            <span className="text-yellow-500">Coinbase (fallback)</span>
+          ) : (
+            <span className="text-gray-600">loading...</span>
+          )}
+          <span className="text-gray-600 font-normal normal-case ml-2">▲ buy &nbsp; ▼ sell &nbsp; — open position</span>
         </h2>
         <PriceChart
           prices={priceData?.prices ?? []}

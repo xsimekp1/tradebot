@@ -1,6 +1,18 @@
 """
 Channel-based signals using optimized support/resistance line detection.
-Uses warm-start optimization: subsequent calls use previous solution as starting point.
+
+Algorithm: Shift-Rotate Coordinate Descent
+1. Start from initial line (max/min price horizontal, or previous solution)
+2. Alternate between:
+   - SHIFT: move line up/down by step (% of price range)
+   - ROTATE: rotate around pivot at 1/3 from current bar (~200 bars back)
+3. Decrease step sizes each iteration for finer refinement
+4. Repeat for N iterations
+
+This is more intuitive and stable than grid search:
+- Pivot at 1/3 from end keeps recent data stable during rotations
+- Alternating shift/rotate is coordinate descent optimization
+- Decreasing steps ensure convergence
 """
 import numpy as np
 import pandas as pd
@@ -12,15 +24,12 @@ from src.signals.base import BaseSignal
 def find_optimal_resistance_line(
     prices: np.ndarray,
     penalty: float = 20.0,
-    debug: bool = False,  # Enable to see optimization iterations
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
+    iterations: int = 6,
 ) -> Tuple[float, float, float]:
     """
-    Find optimal resistance line above price data.
-
-    If prev_slope/prev_intercept provided, does a local search around that point first.
-    Falls back to full grid search if no previous solution or local search fails.
+    Find optimal resistance line above price data using shift-rotate optimization.
 
     Returns: (slope, intercept, avg_distance)
     """
@@ -28,103 +37,92 @@ def find_optimal_resistance_line(
     if n < 20:
         return 0.0, prices[-1] if n > 0 else 0.0, 0.0
 
-    max_idx = int(np.argmax(prices))
-    max_price = prices[max_idx]
-    min_price = np.min(prices)
+    max_price = float(np.max(prices))
+    min_price = float(np.min(prices))
     price_range = max_price - min_price
 
     if price_range < 1e-8:
         return 0.0, max_price, 0.0
 
     indices = np.arange(n)
-    # Time weights: 0.3 at start (old data) → 1 at end (recent data)
-    # Old data still matters (30% weight) but recent data matters more
+    # Time weights: recent data matters more (0.3 → 1.0)
     time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
+        """Score a line. Lower is better. Penalizes breakthroughs 20x."""
         line_values = intercept + slope * indices
         diffs = line_values - prices
-        positive = diffs >= 0
-        # Apply time weights to distances
-        weighted_above = diffs[positive] * time_weights[positive]
-        weighted_below = np.abs(diffs[~positive]) * penalty * time_weights[~positive]
-        score = np.sum(weighted_above) + np.sum(weighted_below)
-        avg_dist = np.mean(np.abs(diffs))
+        above = diffs >= 0
+        # Time-weighted scoring
+        score = (
+            np.sum(diffs[above] * time_weights[above]) +
+            np.sum(np.abs(diffs[~above]) * penalty * time_weights[~above])
+        )
+        avg_dist = float(np.mean(np.abs(diffs)))
         return score, avg_dist
 
-    best_score = float('inf')
-    best_slope = 0.0
-    best_intercept = max_price
-    best_avg_dist = 0.0
-
-    # If we have a previous solution, try local search first (5x5 grid around it)
+    # Initialize from previous solution or horizontal line at max price
     if prev_slope is not None and prev_intercept is not None:
-        # Adjust intercept for the 1-bar shift (window moved forward by 1)
-        adjusted_intercept = prev_intercept + prev_slope
+        # Adjust for 1-bar window shift
+        current_slope = prev_slope
+        current_intercept = prev_intercept + prev_slope
+    else:
+        current_slope = 0.0
+        current_intercept = max_price
 
-        local_slope_range = price_range / n * 0.1  # Smaller range for local search
-        local_offset_range = price_range * 0.05
+    best_score, best_avg_dist = evaluate(current_slope, current_intercept)
+    best_slope = current_slope
+    best_intercept = current_intercept
 
-        # Rotate around pivot at 1/3 from current bar (2/3 from start of window)
-        # This avoids rotating around bar 0 (600 bars ago) where slope changes
-        # cause huge shifts at the current bar.
-        pivot_idx = n - n // 3
-        pivot_val = adjusted_intercept + prev_slope * pivot_idx
+    # Pivot point: 1/3 from current bar (keeps recent data stable during rotation)
+    pivot_idx = n - n // 3  # e.g., bar 400 out of 600
 
-        for slope_i in range(5):
-            slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
-            for offset_i in range(5):
-                offset = -local_offset_range + (2 * local_offset_range * offset_i / 4)
-                # Anchor line at pivot point — different slopes pass through same region
-                intercept = (pivot_val + offset) - slope * pivot_idx
+    # Initial step sizes
+    shift_step = price_range * 0.02  # 2% of price range
+    rotate_step = price_range / n * 0.2  # Slope change per bar
 
-                score, avg_dist = evaluate(slope, intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = slope
-                    best_intercept = intercept
-                    best_avg_dist = avg_dist
+    for _ in range(iterations):
+        improved = False
 
-        # Sanity check: if resistance line is too far from price range, force full search
-        best_line_at_end = best_intercept + best_slope * (n - 1)
-        if best_score < float('inf') and abs(best_line_at_end - max_price) < price_range * 0.5:
-            return best_slope, best_intercept, best_avg_dist
-        # Otherwise fall through to full grid search (no log - too verbose)
-
-    # Full grid search (15x15) - either first call or local search failed or drifted too far
-    slope_range = price_range / n * 0.5
-
-    if debug:
-        print(f"[R-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
-        print(f"[R-DEBUG] max_price={max_price:.2f} at idx={max_idx}, min_price={min_price:.2f}")
-
-    for slope_i in range(15):
-        slope = -slope_range + (2 * slope_range * slope_i / 14)
-        base_intercept = max_price - slope * max_idx
-
-        for offset_i in range(15):
-            # Search from 0% to +10% around max price (resistance should be AT or slightly above highs)
-            offset = price_range * 0.10 * offset_i / 14
-            intercept = base_intercept + offset
-
-            score, avg_dist = evaluate(slope, intercept)
-            line_at_end = intercept + slope * (n - 1)
-
-            if debug and offset_i == 7:  # Middle offset, show for each slope
-                print(f"[R-DEBUG] slope[{slope_i}]={slope:.6f} offset={offset:.2f} line@end={line_at_end:.2f} score={score:.1f} avg_dist={avg_dist:.2f}")
-
+        # === SHIFT PHASE: try moving line up/down ===
+        for direction in [-1, 1]:
+            test_intercept = current_intercept + direction * shift_step
+            score, avg_dist = evaluate(current_slope, test_intercept)
             if score < best_score:
                 best_score = score
-                best_slope = slope
-                best_intercept = intercept
+                best_slope = current_slope
+                best_intercept = test_intercept
                 best_avg_dist = avg_dist
-                if debug:
-                    print(f"[R-DEBUG] >>> NEW BEST: score={score:.1f} line@end={line_at_end:.2f}")
+                improved = True
 
-    if debug:
-        final_line = best_intercept + best_slope * (n - 1)
-        print(f"[R-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        # === ROTATE PHASE: rotate around pivot point ===
+        pivot_value = current_intercept + current_slope * pivot_idx
+
+        for direction in [-1, 1]:
+            test_slope = current_slope + direction * rotate_step
+            # Line must pass through pivot point
+            test_intercept = pivot_value - test_slope * pivot_idx
+            score, avg_dist = evaluate(test_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = test_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                improved = True
+
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        # Reduce step sizes for finer refinement
+        shift_step *= 0.6
+        rotate_step *= 0.6
+
+        # Early exit if no improvement (converged)
+        if not improved and _ > 2:
+            break
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -132,14 +130,12 @@ def find_optimal_resistance_line(
 def find_optimal_support_line(
     prices: np.ndarray,
     penalty: float = 20.0,
-    debug: bool = False,  # Enable to see optimization iterations
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
+    iterations: int = 6,
 ) -> Tuple[float, float, float]:
     """
-    Find optimal support line below price data.
-
-    Uses warm-start optimization if previous solution provided.
+    Find optimal support line below price data using shift-rotate optimization.
 
     Returns: (slope, intercept, avg_distance)
     """
@@ -147,99 +143,84 @@ def find_optimal_support_line(
     if n < 20:
         return 0.0, prices[-1] if n > 0 else 0.0, 0.0
 
-    min_idx = int(np.argmin(prices))
-    min_price = prices[min_idx]
-    max_price = np.max(prices)
+    max_price = float(np.max(prices))
+    min_price = float(np.min(prices))
     price_range = max_price - min_price
 
     if price_range < 1e-8:
         return 0.0, min_price, 0.0
 
     indices = np.arange(n)
-    # Time weights: 0.3 at start (old data) → 1 at end (recent data)
-    # Old data still matters (30% weight) but recent data matters more
     time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
+        """Score a line. Lower is better. Penalizes breakthroughs 20x."""
         line_values = intercept + slope * indices
-        diffs = prices - line_values  # Inverted: price above line is good
-        positive = diffs >= 0
-        # Apply time weights to distances
-        weighted_above = diffs[positive] * time_weights[positive]
-        weighted_below = np.abs(diffs[~positive]) * penalty * time_weights[~positive]
-        score = np.sum(weighted_above) + np.sum(weighted_below)
-        avg_dist = np.mean(np.abs(diffs))
+        diffs = prices - line_values  # Inverted: price should be ABOVE support
+        above = diffs >= 0
+        score = (
+            np.sum(diffs[above] * time_weights[above]) +
+            np.sum(np.abs(diffs[~above]) * penalty * time_weights[~above])
+        )
+        avg_dist = float(np.mean(np.abs(diffs)))
         return score, avg_dist
 
-    best_score = float('inf')
-    best_slope = 0.0
-    best_intercept = min_price
-    best_avg_dist = 0.0
-
-    # If we have a previous solution, try local search first (5x5 grid)
+    # Initialize
     if prev_slope is not None and prev_intercept is not None:
-        adjusted_intercept = prev_intercept + prev_slope
+        current_slope = prev_slope
+        current_intercept = prev_intercept + prev_slope
+    else:
+        current_slope = 0.0
+        current_intercept = min_price
 
-        local_slope_range = price_range / n * 0.1
-        local_offset_range = price_range * 0.05
+    best_score, best_avg_dist = evaluate(current_slope, current_intercept)
+    best_slope = current_slope
+    best_intercept = current_intercept
 
-        # Rotate around pivot at 1/3 from current bar (2/3 from start of window)
-        pivot_idx = n - n // 3
-        pivot_val = adjusted_intercept + prev_slope * pivot_idx
+    pivot_idx = n - n // 3
 
-        for slope_i in range(5):
-            slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
-            for offset_i in range(5):
-                offset = -local_offset_range + (2 * local_offset_range * offset_i / 4)
-                intercept = (pivot_val + offset) - slope * pivot_idx
+    shift_step = price_range * 0.02
+    rotate_step = price_range / n * 0.2
 
-                score, avg_dist = evaluate(slope, intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = slope
-                    best_intercept = intercept
-                    best_avg_dist = avg_dist
+    for _ in range(iterations):
+        improved = False
 
-        # Sanity check: if support line is too far from price range, force full search
-        best_line_at_end = best_intercept + best_slope * (n - 1)
-        if best_score < float('inf') and abs(best_line_at_end - min_price) < price_range * 0.5:
-            return best_slope, best_intercept, best_avg_dist
-        # Otherwise fall through to full grid search (no log - too verbose)
-
-    # Full grid search (15x15) - either first call or local search failed or drifted too far
-    slope_range = price_range / n * 0.5
-
-    if debug:
-        print(f"[S-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
-        print(f"[S-DEBUG] min_price={min_price:.2f} at idx={min_idx}, max_price={max_price:.2f}")
-
-    for slope_i in range(15):
-        slope = -slope_range + (2 * slope_range * slope_i / 14)
-        base_intercept = min_price - slope * min_idx
-
-        for offset_i in range(15):
-            # Search from -10% to 0% around min price (support should be AT or slightly below lows)
-            offset = -price_range * 0.10 + (price_range * 0.10 * offset_i / 14)
-            intercept = base_intercept + offset
-
-            score, avg_dist = evaluate(slope, intercept)
-            line_at_end = intercept + slope * (n - 1)
-
-            if debug and offset_i == 7:  # Middle offset, show for each slope
-                print(f"[S-DEBUG] slope[{slope_i}]={slope:.6f} offset={offset:.2f} line@end={line_at_end:.2f} score={score:.1f} avg_dist={avg_dist:.2f}")
-
+        # === SHIFT PHASE ===
+        for direction in [-1, 1]:
+            test_intercept = current_intercept + direction * shift_step
+            score, avg_dist = evaluate(current_slope, test_intercept)
             if score < best_score:
                 best_score = score
-                best_slope = slope
-                best_intercept = intercept
+                best_slope = current_slope
+                best_intercept = test_intercept
                 best_avg_dist = avg_dist
-                if debug:
-                    print(f"[S-DEBUG] >>> NEW BEST: score={score:.1f} line@end={line_at_end:.2f}")
+                improved = True
 
-    if debug:
-        final_line = best_intercept + best_slope * (n - 1)
-        print(f"[S-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        # === ROTATE PHASE ===
+        pivot_value = current_intercept + current_slope * pivot_idx
+
+        for direction in [-1, 1]:
+            test_slope = current_slope + direction * rotate_step
+            test_intercept = pivot_value - test_slope * pivot_idx
+            score, avg_dist = evaluate(test_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = test_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                improved = True
+
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        shift_step *= 0.6
+        rotate_step *= 0.6
+
+        if not improved and _ > 2:
+            break
 
     return best_slope, best_intercept, best_avg_dist
 
