@@ -14,6 +14,7 @@ const SIGNAL_COLORS: Record<string, string> = {
   breakout: "#f43f5e",
   channel_position: "#ec4899",
   channel_slope: "#a855f7",
+  channel_trend: "#14b8a6",
 };
 
 type WeightRow = {
@@ -74,7 +75,7 @@ export function SignalEvolutionGrid({ rows }: { rows: WeightRow[] }) {
             {/* Sparkline */}
             <ResponsiveContainer width="100%" height={56}>
               <AreaChart data={data} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
-                <YAxis domain={[0.05, 0.30]} hide />
+                <YAxis domain={[Math.max(0, min - range * 0.2), max + range * 0.2]} hide />
                 <defs>
                   <linearGradient id={`grad-${signal}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={color} stopOpacity={0.3} />
