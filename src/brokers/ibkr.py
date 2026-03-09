@@ -7,6 +7,11 @@ from typing import Optional
 import asyncio
 import pandas as pd
 
+# ib_insync has its own event loop that conflicts with asyncio.run()
+# nest_asyncio allows nested event loops to fix this
+import nest_asyncio
+nest_asyncio.apply()
+
 from src.brokers.base import (
     BaseBroker,
     AccountInfo,

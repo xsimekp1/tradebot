@@ -57,6 +57,12 @@ export async function GET() {
       SELECT side, entry_price, score FROM trades WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1
     `;
 
+    // Get current symbol from latest signal or trade
+    const [symbolRow] = await sql`
+      SELECT symbol FROM trading_signals ORDER BY timestamp DESC LIMIT 1
+    `;
+    const symbol = symbolRow?.symbol ?? "AAPL";
+
     const lastHeartbeat = latestSignal?.timestamp ?? null;
     const nowMs = Date.now();
     const lastMs = lastHeartbeat ? new Date(lastHeartbeat).getTime() : 0;
@@ -64,6 +70,7 @@ export async function GET() {
     const isLive = secondsAgo < 180; // consider live if signal within 3 min
 
     return NextResponse.json({
+      symbol,
       isLive,
       secondsAgo,
       lastHeartbeat,

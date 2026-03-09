@@ -34,7 +34,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">TradeBot</h1>
-          <p className="text-xs text-gray-500">BTC/USD · Paper Trading · Refreshes every 30s</p>
+          <p className="text-xs text-gray-500">{status?.symbol ?? "..."} · IBKR Paper · Refreshes every 30s</p>
         </div>
         <div className="flex items-center gap-3">
           <a href="/research" className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg">
@@ -73,7 +73,9 @@ export default function Dashboard() {
       {/* Price chart */}
       <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
         <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
-          BTC/USD · 1m · {priceData?.source === "alpaca" ? (
+          {status?.symbol ?? "..."} · 1m · {priceData?.source === "ibkr" ? (
+            <span className="text-indigo-400">IBKR</span>
+          ) : priceData?.source === "alpaca" ? (
             <span className="text-indigo-400">Alpaca</span>
           ) : priceData?.source === "coinbase-fallback" ? (
             <span className="text-yellow-500">Coinbase (fallback)</span>
