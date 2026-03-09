@@ -83,10 +83,11 @@ async def write_channel_info(channel_info: dict) -> None:
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+        # Use CAST instead of :: to avoid parameter parsing issues
         await db.execute(text("""
             INSERT INTO bot_cache (key, value, updated_at)
-            VALUES ('channel_info', :value::jsonb, NOW())
-            ON CONFLICT (key) DO UPDATE SET value = :value::jsonb, updated_at = NOW()
+            VALUES ('channel_info', CAST(:value AS JSONB), NOW())
+            ON CONFLICT (key) DO UPDATE SET value = CAST(:value AS JSONB), updated_at = NOW()
         """), {"value": json.dumps(clean_info)})
         await db.commit()
 
