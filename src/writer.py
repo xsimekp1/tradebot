@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -8,8 +9,9 @@ from src.models.equity import EquityCurve
 from src.models.signal import TradingSignal
 from src.models.trade import Trade
 from src.models.weights import SignalWeights
+from src.signals import ALL_SIGNALS
 
-
+SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 DEFAULT_THRESHOLD = 0.15
 
 
@@ -23,8 +25,32 @@ async def load_active_weights() -> tuple[dict[str, float], float]:
         )
         active = result.scalars().first()
         if active:
-            weights_dict = dict(active.weights)
-            perf = dict(active.performance) if active.performance else {}
+            # Handle corrupted weights (string instead of dict)
+            raw_weights = active.weights
+            if isinstance(raw_weights, str):
+                try:
+                    weights_dict = json.loads(raw_weights)
+                except:
+                    print(f"[loop] Weights corrupted (string), using defaults")
+                    return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD
+            elif isinstance(raw_weights, dict):
+                weights_dict = raw_weights.copy()
+            else:
+                print(f"[loop] Weights unknown type {type(raw_weights)}, using defaults")
+                return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD
+
+            # Validate that keys are signal names, not corrupted
+            valid_keys = [k for k in weights_dict.keys() if k in SIGNAL_NAMES or k == "_threshold"]
+            if len(valid_keys) < len(SIGNAL_NAMES) // 2:
+                print(f"[loop] Weights have corrupted keys, using defaults")
+                return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD
+
+            perf = active.performance if active.performance else {}
+            if isinstance(perf, str):
+                try:
+                    perf = json.loads(perf)
+                except:
+                    perf = {}
             threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
             return weights_dict, threshold
         return dict(DEFAULT_WEIGHTS), DEFAULT_THRESHOLD

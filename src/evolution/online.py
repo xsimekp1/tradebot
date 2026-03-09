@@ -48,8 +48,32 @@ def load_active_weights() -> tuple[dict, int, float, float]:
                 "SELECT weights, version, performance FROM signal_weights WHERE is_active=TRUE ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             if row:
-                weights_dict = dict(row[0])
-                perf = dict(row[2]) if row[2] else {}
+                # Handle corrupted weights (string instead of dict)
+                raw_weights = row[0]
+                if isinstance(raw_weights, str):
+                    try:
+                        weights_dict = json.loads(raw_weights)
+                    except:
+                        print(f"{Fore.RED}Weights corrupted (string), using defaults{Style.RESET_ALL}")
+                        return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD, DEFAULT_ENTRY_BIAS
+                elif isinstance(raw_weights, dict):
+                    weights_dict = raw_weights.copy()
+                else:
+                    print(f"{Fore.RED}Weights unknown type {type(raw_weights)}, using defaults{Style.RESET_ALL}")
+                    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD, DEFAULT_ENTRY_BIAS
+
+                # Validate that keys are signal names, not corrupted
+                valid_keys = [k for k in weights_dict.keys() if k in SIGNAL_NAMES or k == "_threshold"]
+                if len(valid_keys) < len(SIGNAL_NAMES) // 2:
+                    print(f"{Fore.RED}Weights have corrupted keys ({list(weights_dict.keys())[:3]}...), using defaults{Style.RESET_ALL}")
+                    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD, DEFAULT_ENTRY_BIAS
+
+                perf = row[2] if row[2] else {}
+                if isinstance(perf, str):
+                    try:
+                        perf = json.loads(perf)
+                    except:
+                        perf = {}
                 threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
                 entry_bias = float(perf.get("entry_bias", DEFAULT_ENTRY_BIAS))
                 # Merge in any NEW signals from DEFAULT_WEIGHTS that aren't in active model
