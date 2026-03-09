@@ -336,9 +336,9 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
 
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
-             allow_short: bool = False, record_trades: bool = False,
+             allow_short: bool = True, record_trades: bool = False,
              fee_pct: float = 0.0025, entry_bias: float = 0.0,
-             stop_loss_pct: float = 0.01) -> dict:
+             stop_loss_pct: float = 0.02) -> dict:
     """
     Simulate trading strategy with transaction costs and stop loss.
 
