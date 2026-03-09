@@ -72,7 +72,6 @@ def find_optimal_resistance_line(
         pivot_idx = n - n // 3
         pivot_val = adjusted_intercept + prev_slope * pivot_idx
 
-        local_iterations = 0
         for slope_i in range(5):
             slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
             for offset_i in range(5):
@@ -81,7 +80,6 @@ def find_optimal_resistance_line(
                 intercept = (pivot_val + offset) - slope * pivot_idx
 
                 score, avg_dist = evaluate(slope, intercept)
-                local_iterations += 1
                 if score < best_score:
                     best_score = score
                     best_slope = slope
@@ -91,17 +89,11 @@ def find_optimal_resistance_line(
         # Sanity check: if resistance line is too far from price range, force full search
         best_line_at_end = best_intercept + best_slope * (n - 1)
         if best_score < float('inf') and abs(best_line_at_end - max_price) < price_range * 0.5:
-            print(f"[channel-R] warm-start OK: {local_iterations} iters, line@end={best_line_at_end:.2f}, score={best_score:.1f}")
             return best_slope, best_intercept, best_avg_dist
-        # Otherwise fall through to full grid search
-        print(f"[channel-R] warm-start FAILED (line too far): {local_iterations} iters, line@end={best_line_at_end:.2f}, max_price={max_price:.2f}, falling back to full search")
+        # Otherwise fall through to full grid search (no log - too verbose)
 
     # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
-
-    if prev_slope is None:
-        print(f"[channel-R] no warm-start (first call), running full 15x15 grid search")
-    # else: fallback case already logged above
 
     if debug:
         print(f"[R-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
@@ -133,9 +125,6 @@ def find_optimal_resistance_line(
     if debug:
         final_line = best_intercept + best_slope * (n - 1)
         print(f"[R-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
-
-    final_line = best_intercept + best_slope * (n - 1)
-    print(f"[channel-R] full grid done: 225 iters, line@end={final_line:.2f}, score={best_score:.1f}")
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -199,7 +188,6 @@ def find_optimal_support_line(
         pivot_idx = n - n // 3
         pivot_val = adjusted_intercept + prev_slope * pivot_idx
 
-        local_iterations = 0
         for slope_i in range(5):
             slope = prev_slope - local_slope_range + (2 * local_slope_range * slope_i / 4)
             for offset_i in range(5):
@@ -207,7 +195,6 @@ def find_optimal_support_line(
                 intercept = (pivot_val + offset) - slope * pivot_idx
 
                 score, avg_dist = evaluate(slope, intercept)
-                local_iterations += 1
                 if score < best_score:
                     best_score = score
                     best_slope = slope
@@ -217,17 +204,11 @@ def find_optimal_support_line(
         # Sanity check: if support line is too far from price range, force full search
         best_line_at_end = best_intercept + best_slope * (n - 1)
         if best_score < float('inf') and abs(best_line_at_end - min_price) < price_range * 0.5:
-            print(f"[channel-S] warm-start OK: {local_iterations} iters, line@end={best_line_at_end:.2f}, score={best_score:.1f}")
             return best_slope, best_intercept, best_avg_dist
-        # Otherwise fall through to full grid search
-        print(f"[channel-S] warm-start FAILED (line too far): {local_iterations} iters, line@end={best_line_at_end:.2f}, min_price={min_price:.2f}, falling back to full search")
+        # Otherwise fall through to full grid search (no log - too verbose)
 
     # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
-
-    if prev_slope is None:
-        print(f"[channel-S] no warm-start (first call), running full 15x15 grid search")
-    # else: fallback case already logged above
 
     if debug:
         print(f"[S-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
@@ -259,9 +240,6 @@ def find_optimal_support_line(
     if debug:
         final_line = best_intercept + best_slope * (n - 1)
         print(f"[S-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
-
-    final_line = best_intercept + best_slope * (n - 1)
-    print(f"[channel-S] full grid done: 225 iters, line@end={final_line:.2f}, score={best_score:.1f}")
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -317,19 +295,16 @@ class ChannelPositionSignal(BaseSignal):
         s_sane = abs(support_price - price_min) < max_deviation
 
         if not r_sane or not s_sane:
-            # Reset cache - something went wrong
-            print(f"[channel] SANITY FAIL: r_sane={r_sane}, s_sane={s_sane}, R={resistance_price:.2f} vs max={price_max:.2f}, S={support_price:.2f} vs min={price_min:.2f}")
+            # Reset cache - warm-start drifted too far
             self._prev_r_slope = None
             self._prev_r_intercept = None
             self._prev_s_slope = None
             self._prev_s_intercept = None
             # Recompute with no warm-start
             if not r_sane:
-                print(f"[channel] Recomputing resistance (full search due to sanity fail)")
                 r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
                 resistance_price = r_intercept + r_slope * n
             if not s_sane:
-                print(f"[channel] Recomputing support (full search due to sanity fail)")
                 s_slope, s_intercept, _ = find_optimal_support_line(prices)
                 support_price = s_intercept + s_slope * n
 

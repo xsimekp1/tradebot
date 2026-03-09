@@ -31,7 +31,20 @@ export async function POST() {
     `;
 
     if (!current) {
-      return NextResponse.json({ error: "No active model found" }, { status: 404 });
+      // No active model - create the first one with target weights
+      const [inserted] = await sql`
+        INSERT INTO signal_weights (version, weights, performance, is_active)
+        VALUES (1, ${JSON.stringify(TARGET_WEIGHTS)}::jsonb, ${JSON.stringify({ source: "force-weights-init" })}::jsonb, TRUE)
+        RETURNING version
+      `;
+
+      return NextResponse.json({
+        success: true,
+        version: inserted.version,
+        oldWeights: null,
+        newWeights: TARGET_WEIGHTS,
+        created: true,
+      });
     }
 
     const oldWeights = current.weights as Record<string, number>;
