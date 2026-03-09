@@ -260,11 +260,11 @@ class ChannelPositionSignal(BaseSignal):
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
 
-        # Periodic logging (every 10 calls during live trading)
+        # Periodic logging (every 100 calls = ~1.5 hours with 1-min bars)
         ChannelPositionSignal._log_counter += 1
-        if ChannelPositionSignal._log_counter % 10 == 1:
-            print(f"[channel] price={current_price:.2f} range=[{price_min:.2f},{price_max:.2f}] "
-                  f"sup={support_price:.2f} res={resistance_price:.2f} width={resistance_price-support_price:.2f}")
+        if ChannelPositionSignal._log_counter % 100 == 1:
+            print(f"[channel] price={current_price:.2f} sup={support_price:.2f} res={resistance_price:.2f} "
+                  f"width={channel_width:.2f} pos={position*100:.0f}%")
 
         # Channel width
         channel_width = resistance_price - support_price
