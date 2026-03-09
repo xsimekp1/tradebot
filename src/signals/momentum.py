@@ -4,22 +4,31 @@ from src.signals.base import BaseSignal
 
 
 class MomentumSignal(BaseSignal):
-    """Price momentum over 1-bar and 5-bar windows, averaged."""
+    """Price momentum over short and long windows, averaged."""
 
     name = "momentum"
 
+    def __init__(self, short_period: int = 15, long_period: int = 60):
+        """
+        Args:
+            short_period: Short-term momentum window (default 15 = 15 min with 1-min bars)
+            long_period: Long-term momentum window (default 60 = 1 hour with 1-min bars)
+        """
+        self.short_period = short_period
+        self.long_period = long_period
+
     def compute(self, bars: pd.DataFrame) -> float:
         close = bars["close"]
-        # 1-bar return
-        ret1 = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2]
-        # 5-bar return
-        if len(close) >= 6:
-            ret5 = (close.iloc[-1] - close.iloc[-6]) / close.iloc[-6]
-        else:
-            ret5 = ret1
+        if len(close) < self.long_period + 1:
+            return 0.0
 
-        # Normalize: typical intraday move is ~0.5%, clip at ±2%
-        norm1 = ret1 / 0.02
-        norm5 = ret5 / 0.02
-        score = (norm1 + norm5) / 2
+        # Short-term return
+        ret_short = (close.iloc[-1] - close.iloc[-self.short_period - 1]) / close.iloc[-self.short_period - 1]
+        # Long-term return
+        ret_long = (close.iloc[-1] - close.iloc[-self.long_period - 1]) / close.iloc[-self.long_period - 1]
+
+        # Normalize: expect ~1-2% moves over an hour, clip at ±5%
+        norm_short = ret_short / 0.03
+        norm_long = ret_long / 0.05
+        score = (norm_short + norm_long) / 2
         return max(-1.0, min(1.0, score))

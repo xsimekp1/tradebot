@@ -12,7 +12,8 @@ class ATRSignal(BaseSignal):
 
     name = "atr"
 
-    def __init__(self, period: int = 14):
+    def __init__(self, period: int = 60):
+        """period: ATR lookback (default 60 = 1 hour with 1-min bars)"""
         self.period = period
 
     def compute(self, bars: pd.DataFrame) -> float:

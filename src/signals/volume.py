@@ -8,7 +8,8 @@ class VolumeSignal(BaseSignal):
 
     name = "volume"
 
-    def __init__(self, lookback: int = 20):
+    def __init__(self, lookback: int = 60):
+        """lookback: Volume average period (default 60 = 1 hour with 1-min bars)"""
         self.lookback = lookback
 
     def compute(self, bars: pd.DataFrame) -> float:

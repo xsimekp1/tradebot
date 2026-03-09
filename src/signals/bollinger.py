@@ -9,7 +9,8 @@ class BollingerSignal(BaseSignal):
 
     name = "bollinger"
 
-    def __init__(self, period: int = 20, std_dev: float = 2.0):
+    def __init__(self, period: int = 60, std_dev: float = 2.0):
+        """period: Bollinger lookback (default 60 = 1 hour with 1-min bars)"""
         self.period = period
         self.std_dev = std_dev
 

@@ -8,7 +8,8 @@ class BreakoutSignal(BaseSignal):
 
     name = "breakout"
 
-    def __init__(self, lookback: int = 20):
+    def __init__(self, lookback: int = 60):
+        """lookback: High/low breakout period (default 60 = 1 hour with 1-min bars)"""
         self.lookback = lookback
 
     def compute(self, bars: pd.DataFrame) -> float:
