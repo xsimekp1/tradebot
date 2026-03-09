@@ -39,6 +39,39 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
+def _get_price_yahoo(symbol: str) -> float:
+    """Get current price from Yahoo Finance (fallback when broker fails)."""
+    import httpx
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        with httpx.Client(timeout=5) as client:
+            resp = client.get(url, params={"interval": "1m", "range": "1d"},
+                            headers={"User-Agent": "Mozilla/5.0"})
+            data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if result:
+            meta = result[0].get("meta", {})
+            return float(meta.get("regularMarketPrice", 0))
+    except Exception as e:
+        print(f"[executor] Yahoo price fallback failed: {e}")
+    return 0.0
+
+
+def _get_current_price(symbol: str) -> float:
+    """Get current price - tries broker first, falls back to Yahoo."""
+    broker = _get_broker()
+    try:
+        price = _run_async(broker.get_current_price(symbol))
+        if price > 0:
+            return price
+    except Exception:
+        pass
+    # Fallback to Yahoo for stocks
+    if settings.ASSET_CLASS == "stock":
+        return _get_price_yahoo(symbol)
+    return 0.0
+
+
 def get_current_position(symbol: str) -> dict | None:
     """Returns position dict with keys: side, qty, avg_entry_price. None if no position."""
     broker = _get_broker()
@@ -73,7 +106,7 @@ def open_long(symbol: str, score: float, notional: float | None = None) -> str |
     try:
         # Calculate quantity from notional
         notional_value = notional or settings.POSITION_SIZE_USD
-        current_price = _run_async(broker.get_current_price(symbol))
+        current_price = _get_current_price(symbol)
 
         if current_price <= 0:
             print(f"[executor] open_long failed: invalid price {current_price}")
@@ -110,7 +143,7 @@ def open_short(symbol: str, score: float, notional: float | None = None) -> str 
     try:
         # Calculate quantity from notional
         notional_value = notional or settings.POSITION_SIZE_USD
-        current_price = _run_async(broker.get_current_price(symbol))
+        current_price = _get_current_price(symbol)
 
         if current_price <= 0:
             print(f"[executor] open_short failed: invalid price {current_price}")

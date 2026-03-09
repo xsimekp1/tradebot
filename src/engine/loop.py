@@ -204,17 +204,17 @@ async def run_intraday_loop():
                     pnl = calc_pnl("long")
                     await write_trade_close(open_trade_id, current_price, pnl, now)
                     open_trade_id = None
-                    print(f"{Fore.YELLOW}[loop] → CLOSE LONG  score={score:+.3f} < {long_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}[loop] -> CLOSE LONG  score={score:+.3f} < {long_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
                     close_position(symbol)
                     # Check if we should immediately open SHORT
                     if score < short_entry and settings.ASSET_CLASS != "crypto":
-                        print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
+                        print(f"{Fore.RED}[loop] -> OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
                         order_id = open_short(symbol, score, position_usd)
                         if order_id:
                             qty = position_usd / current_price
                             open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
                 else:
-                    print(f"[loop] → HOLD LONG  score={score:+.3f} >= {long_exit:+.3f}")
+                    print(f"[loop] -> HOLD LONG  score={score:+.3f} >= {long_exit:+.3f}")
 
             elif current_side == "short":
                 # We have a SHORT position - check for exit
@@ -222,34 +222,34 @@ async def run_intraday_loop():
                     pnl = calc_pnl("short")
                     await write_trade_close(open_trade_id, current_price, pnl, now)
                     open_trade_id = None
-                    print(f"{Fore.YELLOW}[loop] → CLOSE SHORT  score={score:+.3f} > {short_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}[loop] -> CLOSE SHORT  score={score:+.3f} > {short_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
                     close_position(symbol)
                     # Check if we should immediately open LONG
                     if score > long_entry:
-                        print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
+                        print(f"{Fore.GREEN}[loop] -> OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
                         order_id = open_long(symbol, score, position_usd)
                         if order_id:
                             qty = position_usd / current_price
                             open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
                 else:
-                    print(f"[loop] → HOLD SHORT  score={score:+.3f} <= {short_exit:+.3f}")
+                    print(f"[loop] -> HOLD SHORT  score={score:+.3f} <= {short_exit:+.3f}")
 
             else:
                 # No position - check for entry signals
                 if score > long_entry:
-                    print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}[loop] -> OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
                     order_id = open_long(symbol, score, position_usd)
                     if order_id:
                         qty = position_usd / current_price
                         open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
                 elif score < short_entry and settings.ASSET_CLASS != "crypto":
-                    print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}[loop] -> OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
                     order_id = open_short(symbol, score, position_usd)
                     if order_id:
                         qty = position_usd / current_price
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
                 else:
-                    print(f"[loop] → NO POSITION  score={score:+.3f} (need >{long_entry:+.3f} for long, <{short_entry:+.3f} for short)")
+                    print(f"[loop] -> NO POSITION  score={score:+.3f} (need >{long_entry:+.3f} for long, <{short_entry:+.3f} for short)")
 
             # 6. Write signals and equity to DB
             await write_signals(symbol, signal_values, weights, score, now, channel_info)
