@@ -390,8 +390,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "max_dd": round(max_dd, 4),
         "total_fees": round(total_fees, 2),
         "entry_bias": round(entry_bias, 4),
-        "buyhold_return": round(buyhold_return, 4),
-        "beats_buyhold": ret > buyhold_return,
+        "buyhold_return": round(float(buyhold_return), 4),
+        "beats_buyhold": bool(ret > buyhold_return),
     }
 
     if record_trades:
