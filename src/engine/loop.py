@@ -133,8 +133,8 @@ async def run_intraday_loop():
                 if isinstance(sig, ChannelPositionSignal) and sig.last_channel_info:
                     channel_info = sig.last_channel_info
                     ci = channel_info
-                    ds = f"  Δs={ci['support_price'] - _prev_support:+.2f}" if _prev_support else ""
-                    dr = f"  Δr={ci['resistance_price'] - _prev_resistance:+.2f}" if _prev_resistance else ""
+                    ds = f"  ds={ci['support_price'] - _prev_support:+.2f}" if _prev_support else ""
+                    dr = f"  dr={ci['resistance_price'] - _prev_resistance:+.2f}" if _prev_resistance else ""
                     s_breaks_str = f"  breaks={ci['support_breaks']}({ci['support_breaks_pct']}%)" if 'support_breaks' in ci else ""
                     s_slope_str = f"  slope={ci['support_slope']:+.6f}" if 'support_slope' in ci else ""
                     r_breaks_str = f"  breaks={ci['resistance_breaks']}({ci['resistance_breaks_pct']}%)" if 'resistance_breaks' in ci else ""
