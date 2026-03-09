@@ -36,8 +36,9 @@ def find_optimal_resistance_line(
         return 0.0, max_price, 0.0
 
     indices = np.arange(n)
-    # Time weights: 0 at start (old data) → 1 at end (recent data)
-    time_weights = np.linspace(0, 1, n)
+    # Time weights: 0.3 at start (old data) → 1 at end (recent data)
+    # Old data still matters (30% weight) but recent data matters more
+    time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
         """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
@@ -84,11 +85,13 @@ def find_optimal_resistance_line(
                     best_intercept = intercept
                     best_avg_dist = avg_dist
 
-        # If local search found something reasonable, return it
-        if best_score < float('inf'):
+        # Sanity check: if resistance line is too far from price range, force full search
+        best_line_at_end = best_intercept + best_slope * (n - 1)
+        if best_score < float('inf') and abs(best_line_at_end - max_price) < price_range * 0.5:
             return best_slope, best_intercept, best_avg_dist
+        # Otherwise fall through to full grid search
 
-    # Full grid search (15x15) - either first call or local search failed
+    # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
 
     for slope_i in range(15):
@@ -135,8 +138,9 @@ def find_optimal_support_line(
         return 0.0, min_price, 0.0
 
     indices = np.arange(n)
-    # Time weights: 0 at start (old data) → 1 at end (recent data)
-    time_weights = np.linspace(0, 1, n)
+    # Time weights: 0.3 at start (old data) → 1 at end (recent data)
+    # Old data still matters (30% weight) but recent data matters more
+    time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
         """Returns (score, avg_dist) for a given line. Time-weighted: recent bars matter more."""
@@ -179,10 +183,13 @@ def find_optimal_support_line(
                     best_intercept = intercept
                     best_avg_dist = avg_dist
 
-        if best_score < float('inf'):
+        # Sanity check: if support line is too far from price range, force full search
+        best_line_at_end = best_intercept + best_slope * (n - 1)
+        if best_score < float('inf') and abs(best_line_at_end - min_price) < price_range * 0.5:
             return best_slope, best_intercept, best_avg_dist
+        # Otherwise fall through to full grid search
 
-    # Full grid search (15x15)
+    # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
 
     for slope_i in range(15):
@@ -213,6 +220,7 @@ class ChannelPositionSignal(BaseSignal):
     """
 
     name = "channel_position"
+    _log_counter = 0  # Class-level counter for periodic logging
 
     def __init__(self, lookback: int = 600):
         self.lookback = lookback
@@ -231,6 +239,7 @@ class ChannelPositionSignal(BaseSignal):
 
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
         current_price = prices[-1]
+        price_min, price_max = prices.min(), prices.max()
 
         # Find lines with warm-start
         r_slope, r_intercept, _ = find_optimal_resistance_line(
@@ -250,6 +259,12 @@ class ChannelPositionSignal(BaseSignal):
         n = len(prices) - 1
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
+
+        # Periodic logging (every 10 calls during live trading)
+        ChannelPositionSignal._log_counter += 1
+        if ChannelPositionSignal._log_counter % 10 == 1:
+            print(f"[channel] price={current_price:.2f} range=[{price_min:.2f},{price_max:.2f}] "
+                  f"sup={support_price:.2f} res={resistance_price:.2f} width={resistance_price-support_price:.2f}")
 
         # Channel width
         channel_width = resistance_price - support_price

@@ -205,7 +205,15 @@ def compute_signal_matrix(df, label: str = "") -> np.ndarray:
 
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
-             allow_short: bool = False, record_trades: bool = False) -> dict:
+             allow_short: bool = False, record_trades: bool = False,
+             fee_pct: float = 0.0025) -> dict:
+    """
+    Simulate trading strategy with transaction costs.
+
+    Args:
+        fee_pct: Transaction fee as percentage (default 0.25% = 0.0025 per trade)
+                 This covers spread + commission. Applied on entry and exit.
+    """
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
 
@@ -218,6 +226,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     trades: list[float] = []
     trades_log: list[dict] = []
     equity = np.full(len(df), capital, dtype=np.float64)
+    total_fees = 0.0
 
     for i in range(LOOKBACK, len(df)):
         price = prices[i]
@@ -225,30 +234,40 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
 
         if position is None:
             if score > long_thr:
-                qty = pos_size / price
+                entry_fee = pos_size * fee_pct
+                qty = (pos_size - entry_fee) / price  # Buy slightly less due to fee
                 cash -= pos_size
+                total_fees += entry_fee
                 position = {"side": "long", "entry": price, "qty": qty, "idx": i}
                 if record_trades:
-                    trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i]})
+                    trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
             elif allow_short and score < short_thr:
+                entry_fee = pos_size * fee_pct
                 qty = pos_size / price
-                cash += pos_size
+                cash += pos_size - entry_fee
+                total_fees += entry_fee
                 position = {"side": "short", "entry": price, "qty": qty, "idx": i}
                 if record_trades:
-                    trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i]})
+                    trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
         elif position["side"] == "long" and score < short_thr:
-            pnl = (price - position["entry"]) * position["qty"]
-            cash += pos_size + pnl
+            exit_value = position["qty"] * price
+            exit_fee = exit_value * fee_pct
+            pnl = (price - position["entry"]) * position["qty"] - exit_fee
+            cash += exit_value - exit_fee
+            total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2)})
+                trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
             position = None
         elif position["side"] == "short" and score > long_thr:
-            pnl = (position["entry"] - price) * position["qty"]
-            cash -= pos_size - pnl
+            exit_cost = position["qty"] * price
+            exit_fee = exit_cost * fee_pct
+            pnl = (position["entry"] - price) * position["qty"] - exit_fee
+            cash -= exit_cost + exit_fee
+            total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2)})
+                trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
             position = None
 
         if position:
@@ -287,6 +306,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "win_rate": round(win_rate, 2),
         "profit_factor": round(min(pf, 999.0), 4),
         "max_dd": round(max_dd, 4),
+        "total_fees": round(total_fees, 2),
     }
 
     if record_trades:
