@@ -20,7 +20,8 @@
       "Bash(railway variables:*)",
       "Bash(powershell -Command \"railway variables --service tradebot 2>&1\")",
       "WebFetch(domain:developer.oanda.com)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(git revert:*)"
     ]
   }
 }
