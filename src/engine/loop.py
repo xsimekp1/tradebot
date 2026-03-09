@@ -12,6 +12,7 @@ from src.engine.executor import (
     close_position,
     open_long,
     open_short,
+    submit_stop_loss,
 )
 from src.engine.scoring import compute_score
 from src.signals import ALL_SIGNALS
@@ -236,18 +237,36 @@ async def run_intraday_loop():
 
             else:
                 # No position - check for entry signals
+                # Calculate stop loss distance from channel spread
+                stop_distance = None
+                if channel_info:
+                    spread = channel_info.get('resistance_price', 0) - channel_info.get('support_price', 0)
+                    if spread > 0:
+                        stop_distance = spread / 2  # Half channel spread
+
                 if score > long_entry:
                     print(f"{Fore.GREEN}[loop] -> OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
                     order_id = open_long(symbol, score, position_usd)
                     if order_id:
-                        qty = position_usd / current_price
+                        qty = int(position_usd / current_price)
                         open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
+                        # Submit stop loss
+                        if stop_distance and qty > 0:
+                            stop_price = current_price - stop_distance
+                            print(f"{Fore.YELLOW}[loop] -> STOP LOSS @ ${stop_price:.2f} (spread/2=${stop_distance:.2f}){Style.RESET_ALL}")
+                            submit_stop_loss(symbol, "long", qty, stop_price)
+
                 elif score < short_entry and settings.ASSET_CLASS != "crypto":
                     print(f"{Fore.RED}[loop] -> OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
                     order_id = open_short(symbol, score, position_usd)
                     if order_id:
-                        qty = position_usd / current_price
+                        qty = int(position_usd / current_price)
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
+                        # Submit stop loss
+                        if stop_distance and qty > 0:
+                            stop_price = current_price + stop_distance
+                            print(f"{Fore.YELLOW}[loop] -> STOP LOSS @ ${stop_price:.2f} (spread/2=${stop_distance:.2f}){Style.RESET_ALL}")
+                            submit_stop_loss(symbol, "short", qty, stop_price)
                 else:
                     print(f"[loop] -> NO POSITION  score={score:+.3f} (need >{long_entry:+.3f} for long, <{short_entry:+.3f} for short)")
 

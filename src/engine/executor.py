@@ -186,3 +186,44 @@ def get_account() -> dict:
         "buying_power": account.buying_power,
         "currency": account.currency,
     }
+
+
+def submit_stop_loss(symbol: str, side: str, quantity: int, stop_price: float) -> str | None:
+    """
+    Submit a stop loss order.
+    side: 'long' or 'short' - the position we're protecting
+    For long position: submits SELL stop below current price
+    For short position: submits BUY stop above current price
+    """
+    from ib_insync import Stock, Order
+
+    broker = _get_broker()
+
+    try:
+        # Get IB connection
+        ib = broker._get_ib()
+
+        contract = Stock(symbol, 'SMART', 'USD')
+        ib.qualifyContracts(contract)
+
+        # For long position: SELL stop (exit if price drops)
+        # For short position: BUY stop (exit if price rises)
+        action = 'SELL' if side == 'long' else 'BUY'
+
+        stop_order = Order(
+            action=action,
+            totalQuantity=quantity,
+            orderType='STP',
+            auxPrice=round(stop_price, 2),
+            tif='GTC',  # Good Till Cancelled
+        )
+
+        trade = ib.placeOrder(contract, stop_order)
+        ib.sleep(1)  # Wait for order to be acknowledged
+
+        print(f"[executor] stop_loss({symbol}, {side}, qty={quantity}, stop=${stop_price:.2f}) -> {trade.orderStatus.status}")
+        return str(trade.order.orderId)
+
+    except Exception as e:
+        print(f"[executor] stop_loss failed: {e}")
+        return None
