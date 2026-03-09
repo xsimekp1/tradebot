@@ -63,7 +63,17 @@ async def write_signals(
 
 async def write_channel_info(channel_info: dict) -> None:
     """Store channel info in database (upsert into cache table)."""
+    import json
     from sqlalchemy import text
+
+    # Convert numpy types to native Python types for JSON serialization
+    def convert_numpy(obj):
+        if hasattr(obj, 'item'):  # numpy scalar
+            return obj.item()
+        return obj
+
+    clean_info = {k: convert_numpy(v) for k, v in channel_info.items()}
+
     async with AsyncSessionLocal() as db:
         # Create table if not exists and upsert the data
         await db.execute(text("""
@@ -75,9 +85,9 @@ async def write_channel_info(channel_info: dict) -> None:
         """))
         await db.execute(text("""
             INSERT INTO bot_cache (key, value, updated_at)
-            VALUES ('channel_info', :value, NOW())
-            ON CONFLICT (key) DO UPDATE SET value = :value, updated_at = NOW()
-        """), {"value": channel_info})
+            VALUES ('channel_info', :value::jsonb, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = :value::jsonb, updated_at = NOW()
+        """), {"value": json.dumps(clean_info)})
         await db.commit()
 
 
