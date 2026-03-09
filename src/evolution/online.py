@@ -191,20 +191,35 @@ def fetch_bars(symbol: str):
 
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
-def compute_signal_matrix(df, label: str = "") -> np.ndarray:
+def compute_signal_matrix(df, label: str = "", step: int = 1) -> np.ndarray:
+    """
+    Compute signal matrix for all bars.
+
+    Args:
+        step: Compute signals every N bars (interpolate in between).
+              step=1 is full resolution, step=5 is 5x faster but less precise.
+    """
     signals = make_signals()  # fresh instances — don't pollute live trading state
     n = len(df)
     matrix = np.zeros((n, len(signals)), dtype=np.float32)
-    total = n - LOOKBACK
+    total = (n - LOOKBACK) // step
     tag = f"{label}signals" if label else "signals"
     # Report progress every 1000 bars or ~5% (whichever is smaller)
     report_interval = min(1000, max(1, total // 20))
+
+    last_values = np.zeros(len(signals), dtype=np.float32)
+    computed_idx = 0
     for idx, i in enumerate(range(LOOKBACK, n)):
-        if total > 0 and idx % report_interval == 0:
-            print(f"  {tag}: {idx * 100 // total}% ({idx}/{total} bars)")
-        window = df.iloc[i - LOOKBACK: i + 1]
-        for j, sig in enumerate(signals):
-            matrix[i, j] = sig.safe_compute(window)
+        if idx % step == 0:
+            # Compute signals at this bar
+            if total > 0 and computed_idx % report_interval == 0:
+                print(f"  {tag}: {computed_idx * 100 // total}% ({computed_idx}/{total} bars)")
+            window = df.iloc[i - LOOKBACK: i + 1]
+            for j, sig in enumerate(signals):
+                last_values[j] = sig.safe_compute(window)
+            computed_idx += 1
+        # Use last computed values (interpolation = hold previous value)
+        matrix[i] = last_values
     return matrix
 
 
@@ -388,8 +403,10 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
 
     print("  Computing signal matrices...")
     signal_start = time.time()
-    mat_train = compute_signal_matrix(df_train, "Train ")
-    mat_test = compute_signal_matrix(df_test, "Test  ")
+    # Use step=5 for training (5x faster, slight precision loss is OK for selection)
+    mat_train = compute_signal_matrix(df_train, "Train ", step=5)
+    # Use step=1 for test (full precision for final evaluation)
+    mat_test = compute_signal_matrix(df_test, "Test  ", step=1)
     signal_duration = time.time() - signal_start
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
