@@ -400,12 +400,14 @@ def mutate_entry_bias(entry_bias: float, sigma: float) -> float:
 def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     current_weights, version, current_threshold, current_entry_bias = load_active_weights()
 
-    # Integrate any new signals added since last saved version
+    # Integrate any new signals added since last saved version (using DEFAULT_WEIGHTS)
+    from src.engine.scoring import DEFAULT_WEIGHTS
     new_signals = [n for n in SIGNAL_NAMES if n not in current_weights]
     if new_signals:
-        print(f"{Fore.YELLOW}  New signals: {new_signals} — seeding at 0.02{Style.RESET_ALL}")
         for n in new_signals:
-            current_weights[n] = 0.02
+            default_w = DEFAULT_WEIGHTS.get(n, 0.05)
+            current_weights[n] = default_w
+            print(f"{Fore.YELLOW}  New signal: {n} — seeding at {default_w:.2f}{Style.RESET_ALL}")
     # Drop signals removed from ALL_SIGNALS
     current_weights = {k: v for k, v in current_weights.items() if k in SIGNAL_NAMES}
     total = sum(current_weights.values())
