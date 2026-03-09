@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import useSWR from "swr";
 import { WeightsComparison } from "@/components/WeightsComparison";
 import { WalkForwardChart } from "@/components/WalkForwardChart";
@@ -95,11 +96,14 @@ export default function ResearchPage() {
           />
         </div>
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-          <div className="mb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Active Model</h2>
-            <p className="text-xs text-gray-600 mt-0.5">
-              {activeWeights ? `v${activeWeights.version} — weights currently used for scoring` : "defaults"}
-            </p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Active Model</h2>
+              <p className="text-xs text-gray-600 mt-0.5">
+                {activeWeights ? `v${activeWeights.version} — weights currently used for scoring` : "defaults"}
+              </p>
+            </div>
+            <ForceWeightsButton />
           </div>
           {activeWeights ? (
             <WeightsComparison weights={activeWeights.weights} />
@@ -188,6 +192,46 @@ function MiniStat({ label, value, positive, sub }: { label: string; value: strin
       <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function ForceWeightsButton() {
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState<string | null>(null);
+
+  const handleForce = async () => {
+    if (!confirm("Přepsat váhy na:\n• channel_position: 40%\n• channel_trend: 20%\n• ostatní proporčně snížené\n\nPokračovat?")) {
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/force-weights", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setResult(`✓ Váhy aktualizovány (v${data.version})`);
+        // Refresh page after 2s
+        setTimeout(() => window.location.reload(), 2000);
+      } else {
+        setResult(`✗ ${data.error}`);
+      }
+    } catch (e) {
+      setResult(`✗ ${String(e)}`);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {result && <span className={`text-xs ${result.startsWith("✓") ? "text-green-400" : "text-red-400"}`}>{result}</span>}
+      <button
+        onClick={handleForce}
+        disabled={loading}
+        className="text-xs px-2 py-1 rounded border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+      >
+        {loading ? "..." : "Force Weights"}
+      </button>
     </div>
   );
 }
