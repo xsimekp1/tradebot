@@ -26,10 +26,15 @@ def find_optimal_resistance_line(
     penalty: float = 20.0,
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
-    iterations: int = 6,
 ) -> Tuple[float, float, float]:
     """
-    Find optimal resistance line above price data using shift-rotate optimization.
+    Find optimal resistance line above price data using multi-scale shift-rotate optimization.
+
+    Algorithm:
+    1. Initialize: line through max price with slight downward slope (or from prev solution)
+    2. Coarse search: large steps, find approximate region
+    3. Fine search: small steps, converge to optimal
+    4. Each phase: try 5 shift positions × 5 rotation angles
 
     Returns: (slope, intercept, avg_distance)
     """
@@ -37,7 +42,8 @@ def find_optimal_resistance_line(
     if n < 20:
         return 0.0, prices[-1] if n > 0 else 0.0, 0.0
 
-    max_price = float(np.max(prices))
+    max_idx = int(np.argmax(prices))
+    max_price = float(prices[max_idx])
     min_price = float(np.min(prices))
     price_range = max_price - min_price
 
@@ -49,11 +55,11 @@ def find_optimal_resistance_line(
     time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Score a line. Lower is better. Penalizes breakthroughs 20x."""
+        """Score a line. Lower is better. Penalizes breakthroughs heavily."""
         line_values = intercept + slope * indices
         diffs = line_values - prices
         above = diffs >= 0
-        # Time-weighted scoring
+        # Time-weighted: recent breakthroughs hurt more
         score = (
             np.sum(diffs[above] * time_weights[above]) +
             np.sum(np.abs(diffs[~above]) * penalty * time_weights[~above])
@@ -61,68 +67,73 @@ def find_optimal_resistance_line(
         avg_dist = float(np.mean(np.abs(diffs)))
         return score, avg_dist
 
-    # Initialize from previous solution or horizontal line at max price
+    # Pivot point: 1/3 from current bar (keeps recent data stable during rotation)
+    pivot_idx = n - n // 3  # e.g., bar 400 out of 600
+
+    # Initialize from previous solution or smart starting point
     if prev_slope is not None and prev_intercept is not None:
         # Adjust for 1-bar window shift
         current_slope = prev_slope
         current_intercept = prev_intercept + prev_slope
     else:
-        current_slope = 0.0
-        current_intercept = max_price
+        # Start with line through max price, slight trend based on recent vs old prices
+        recent_avg = float(np.mean(prices[-n//4:]))
+        old_avg = float(np.mean(prices[:n//4]))
+        trend_slope = (recent_avg - old_avg) / (n * 0.75)
+        current_slope = trend_slope
+        # Line passes through max price point
+        current_intercept = max_price - current_slope * max_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
     best_intercept = current_intercept
 
-    # Pivot point: 1/3 from current bar (keeps recent data stable during rotation)
-    pivot_idx = n - n // 3  # e.g., bar 400 out of 600
+    # Multi-scale optimization: coarse → fine
+    scales = [
+        (price_range * 0.03, price_range / n * 0.3),   # Coarse: 3% shift, large rotation
+        (price_range * 0.01, price_range / n * 0.1),   # Medium: 1% shift
+        (price_range * 0.003, price_range / n * 0.03), # Fine: 0.3% shift
+    ]
 
-    # Initial step sizes
-    shift_step = price_range * 0.02  # 2% of price range
-    rotate_step = price_range / n * 0.2  # Slope change per bar
+    for shift_step, rotate_step in scales:
+        # Run multiple iterations at each scale
+        for _ in range(4):
+            improved = False
 
-    for _ in range(iterations):
-        improved = False
+            # === SHIFT PHASE: try 5 positions (-2, -1, 0, +1, +2) × step ===
+            for mult in [-2, -1, 1, 2]:
+                test_intercept = current_intercept + mult * shift_step
+                score, avg_dist = evaluate(current_slope, test_intercept)
+                if score < best_score:
+                    best_score = score
+                    best_slope = current_slope
+                    best_intercept = test_intercept
+                    best_avg_dist = avg_dist
+                    improved = True
 
-        # === SHIFT PHASE: try moving line up/down ===
-        for direction in [-1, 1]:
-            test_intercept = current_intercept + direction * shift_step
-            score, avg_dist = evaluate(current_slope, test_intercept)
-            if score < best_score:
-                best_score = score
-                best_slope = current_slope
-                best_intercept = test_intercept
-                best_avg_dist = avg_dist
-                improved = True
+            current_slope = best_slope
+            current_intercept = best_intercept
 
-        current_slope = best_slope
-        current_intercept = best_intercept
+            # === ROTATE PHASE: rotate around pivot, try 5 angles ===
+            pivot_value = current_intercept + current_slope * pivot_idx
 
-        # === ROTATE PHASE: rotate around pivot point ===
-        pivot_value = current_intercept + current_slope * pivot_idx
+            for mult in [-2, -1, 1, 2]:
+                test_slope = current_slope + mult * rotate_step
+                test_intercept = pivot_value - test_slope * pivot_idx
+                score, avg_dist = evaluate(test_slope, test_intercept)
+                if score < best_score:
+                    best_score = score
+                    best_slope = test_slope
+                    best_intercept = test_intercept
+                    best_avg_dist = avg_dist
+                    improved = True
 
-        for direction in [-1, 1]:
-            test_slope = current_slope + direction * rotate_step
-            # Line must pass through pivot point
-            test_intercept = pivot_value - test_slope * pivot_idx
-            score, avg_dist = evaluate(test_slope, test_intercept)
-            if score < best_score:
-                best_score = score
-                best_slope = test_slope
-                best_intercept = test_intercept
-                best_avg_dist = avg_dist
-                improved = True
+            current_slope = best_slope
+            current_intercept = best_intercept
 
-        current_slope = best_slope
-        current_intercept = best_intercept
-
-        # Reduce step sizes for finer refinement
-        shift_step *= 0.6
-        rotate_step *= 0.6
-
-        # Early exit if no improvement (converged)
-        if not improved and _ > 2:
-            break
+            # Early exit from this scale if converged
+            if not improved:
+                break
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -132,10 +143,9 @@ def find_optimal_support_line(
     penalty: float = 20.0,
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
-    iterations: int = 6,
 ) -> Tuple[float, float, float]:
     """
-    Find optimal support line below price data using shift-rotate optimization.
+    Find optimal support line below price data using multi-scale shift-rotate optimization.
 
     Returns: (slope, intercept, avg_distance)
     """
@@ -143,8 +153,9 @@ def find_optimal_support_line(
     if n < 20:
         return 0.0, prices[-1] if n > 0 else 0.0, 0.0
 
+    min_idx = int(np.argmin(prices))
+    min_price = float(prices[min_idx])
     max_price = float(np.max(prices))
-    min_price = float(np.min(prices))
     price_range = max_price - min_price
 
     if price_range < 1e-8:
@@ -154,7 +165,7 @@ def find_optimal_support_line(
     time_weights = np.linspace(0.3, 1.0, n)
 
     def evaluate(slope: float, intercept: float) -> Tuple[float, float]:
-        """Score a line. Lower is better. Penalizes breakthroughs 20x."""
+        """Score a line. Lower is better. Penalizes breakthroughs heavily."""
         line_values = intercept + slope * indices
         diffs = prices - line_values  # Inverted: price should be ABOVE support
         above = diffs >= 0
@@ -165,62 +176,68 @@ def find_optimal_support_line(
         avg_dist = float(np.mean(np.abs(diffs)))
         return score, avg_dist
 
-    # Initialize
+    pivot_idx = n - n // 3
+
+    # Initialize from previous solution or smart starting point
     if prev_slope is not None and prev_intercept is not None:
         current_slope = prev_slope
         current_intercept = prev_intercept + prev_slope
     else:
-        current_slope = 0.0
-        current_intercept = min_price
+        # Start with line through min price, trend based on recent vs old
+        recent_avg = float(np.mean(prices[-n//4:]))
+        old_avg = float(np.mean(prices[:n//4]))
+        trend_slope = (recent_avg - old_avg) / (n * 0.75)
+        current_slope = trend_slope
+        current_intercept = min_price - current_slope * min_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
     best_intercept = current_intercept
 
-    pivot_idx = n - n // 3
+    # Multi-scale optimization: coarse → fine
+    scales = [
+        (price_range * 0.03, price_range / n * 0.3),
+        (price_range * 0.01, price_range / n * 0.1),
+        (price_range * 0.003, price_range / n * 0.03),
+    ]
 
-    shift_step = price_range * 0.02
-    rotate_step = price_range / n * 0.2
+    for shift_step, rotate_step in scales:
+        for _ in range(4):
+            improved = False
 
-    for _ in range(iterations):
-        improved = False
+            # === SHIFT PHASE ===
+            for mult in [-2, -1, 1, 2]:
+                test_intercept = current_intercept + mult * shift_step
+                score, avg_dist = evaluate(current_slope, test_intercept)
+                if score < best_score:
+                    best_score = score
+                    best_slope = current_slope
+                    best_intercept = test_intercept
+                    best_avg_dist = avg_dist
+                    improved = True
 
-        # === SHIFT PHASE ===
-        for direction in [-1, 1]:
-            test_intercept = current_intercept + direction * shift_step
-            score, avg_dist = evaluate(current_slope, test_intercept)
-            if score < best_score:
-                best_score = score
-                best_slope = current_slope
-                best_intercept = test_intercept
-                best_avg_dist = avg_dist
-                improved = True
+            current_slope = best_slope
+            current_intercept = best_intercept
 
-        current_slope = best_slope
-        current_intercept = best_intercept
+            # === ROTATE PHASE ===
+            pivot_value = current_intercept + current_slope * pivot_idx
 
-        # === ROTATE PHASE ===
-        pivot_value = current_intercept + current_slope * pivot_idx
+            for mult in [-2, -1, 1, 2]:
+                test_slope = current_slope + mult * rotate_step
+                test_intercept = pivot_value - test_slope * pivot_idx
+                score, avg_dist = evaluate(test_slope, test_intercept)
+                if score < best_score:
+                    best_score = score
+                    best_slope = test_slope
+                    best_intercept = test_intercept
+                    best_avg_dist = avg_dist
+                    improved = True
 
-        for direction in [-1, 1]:
-            test_slope = current_slope + direction * rotate_step
-            test_intercept = pivot_value - test_slope * pivot_idx
-            score, avg_dist = evaluate(test_slope, test_intercept)
-            if score < best_score:
-                best_score = score
-                best_slope = test_slope
-                best_intercept = test_intercept
-                best_avg_dist = avg_dist
-                improved = True
+            current_slope = best_slope
+            current_intercept = best_intercept
 
-        current_slope = best_slope
-        current_intercept = best_intercept
-
-        shift_step *= 0.6
-        rotate_step *= 0.6
-
-        if not improved and _ > 2:
-            break
+            if not improved:
+                break
 
     return best_slope, best_intercept, best_avg_dist
 
