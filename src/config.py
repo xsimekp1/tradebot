@@ -6,8 +6,13 @@ class Settings(BaseSettings):
 
     DATABASE_URL_ASYNC: str = "postgresql+asyncpg://localhost/tradebot"
 
-    # Broker selection: "alpaca" or "oanda"
+    # Broker selection: "alpaca", "oanda", or "ibkr"
     BROKER: str = "alpaca"
+
+    # Interactive Brokers settings
+    IBKR_HOST: str = "127.0.0.1"
+    IBKR_PORT: int = 4002  # 4002 = Gateway Paper, 4001 = Gateway Live, 7497 = TWS Paper
+    IBKR_CLIENT_ID: int = 1
 
     # Alpaca settings
     ALPACA_API_KEY: str = ""
@@ -24,8 +29,11 @@ class Settings(BaseSettings):
     ASSET_CLASS: str = "stock"
     SYMBOL: str = "SPY"
     LOOP_INTERVAL_SECONDS: int = 60
-    SCORE_LONG_THRESHOLD: float = 0.15
-    SCORE_SHORT_THRESHOLD: float = -0.15
+    # Thresholds for two-sided trading (long + short)
+    LONG_ENTRY_THRESHOLD: float = 0.18
+    LONG_EXIT_THRESHOLD: float = 0.15
+    SHORT_ENTRY_THRESHOLD: float = -0.18
+    SHORT_EXIT_THRESHOLD: float = -0.15
     POSITION_SIZE_USD: float = 1000.0
     # How many bars to fetch for signal computation
     BARS_LIMIT: int = 600

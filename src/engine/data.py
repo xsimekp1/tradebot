@@ -1,65 +1,50 @@
+"""
+Market data fetching through broker abstraction.
+Supports Alpaca, OANDA, and IBKR brokers.
+"""
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 
 from src.config import settings
+from src.brokers import get_broker
+
+# Global broker instance for data (lazy initialized)
+_broker = None
+
+
+def _get_broker():
+    """Get or create broker instance based on settings."""
+    global _broker
+    if _broker is None:
+        _broker = get_broker(settings.BROKER)
+    return _broker
+
+
+def _run_async(coro):
+    """Run async coroutine from sync context."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 def fetch_bars(symbol: str, limit: int = 100) -> pd.DataFrame:
-    """Fetch the last `limit` 1-minute bars. Auto-detects stock vs crypto."""
-    if settings.ASSET_CLASS == "crypto":
-        return _fetch_crypto_bars(symbol, limit)
-    return _fetch_stock_bars(symbol, limit)
-
-
-def _fetch_stock_bars(symbol: str, limit: int) -> pd.DataFrame:
-    from alpaca.data.historical import StockHistoricalDataClient
-    from alpaca.data.requests import StockBarsRequest
-    from alpaca.data.timeframe import TimeFrame
-
-    client = StockHistoricalDataClient(
-        api_key=settings.ALPACA_API_KEY,
-        secret_key=settings.ALPACA_SECRET_KEY,
-    )
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(minutes=limit * 2)
-
-    req = StockBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame.Minute,
-        start=start,
-        end=end,
-        limit=limit,
-        feed="iex",
-    )
-    bars = client.get_stock_bars(req)
-    return _normalize(bars.df, symbol, limit)
-
-
-def _fetch_crypto_bars(symbol: str, limit: int) -> pd.DataFrame:
-    from alpaca.data.historical import CryptoHistoricalDataClient
-    from alpaca.data.requests import CryptoBarsRequest
-    from alpaca.data.timeframe import TimeFrame
-
-    client = CryptoHistoricalDataClient(
-        api_key=settings.ALPACA_API_KEY,
-        secret_key=settings.ALPACA_SECRET_KEY,
-    )
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(minutes=limit + 10)  # crypto has no gaps
-
-    req = CryptoBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame.Minute,
-        start=start,
-        end=end,
-        limit=limit,
-    )
-    bars = client.get_crypto_bars(req)
-    return _normalize(bars.df, symbol, limit)
+    """Fetch the last `limit` 1-minute bars using configured broker."""
+    broker = _get_broker()
+    df = _run_async(broker.get_bars(symbol, "1m", limit))
+    return _normalize(df, symbol, limit)
 
 
 def _normalize(df: pd.DataFrame, symbol: str, limit: int) -> pd.DataFrame:
+    """Normalize DataFrame to standard format."""
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.index, pd.MultiIndex):

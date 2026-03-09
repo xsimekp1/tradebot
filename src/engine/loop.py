@@ -22,18 +22,36 @@ colorama_init(autoreset=True)
 
 
 def is_market_open() -> bool:
-    """Simple check: NYSE market hours Mon-Fri 9:30-16:00 ET (UTC-4/5)."""
-    from alpaca.trading.client import TradingClient
-    try:
-        client = TradingClient(
-            api_key=settings.ALPACA_API_KEY,
-            secret_key=settings.ALPACA_SECRET_KEY,
-            paper=True,
-        )
-        clock = client.get_clock()
-        return clock.is_open
-    except Exception:
-        return True  # assume open if check fails
+    """Check if stock market is open. For crypto/forex, always returns True."""
+    # Crypto and forex trade 24/7
+    if settings.ASSET_CLASS in ("crypto", "forex"):
+        return True
+
+    # For stocks, check market hours
+    if settings.BROKER == "alpaca":
+        from alpaca.trading.client import TradingClient
+        try:
+            client = TradingClient(
+                api_key=settings.ALPACA_API_KEY,
+                secret_key=settings.ALPACA_SECRET_KEY,
+                paper=True,
+            )
+            clock = client.get_clock()
+            return clock.is_open
+        except Exception:
+            pass
+
+    # For IBKR or fallback: simple time-based check (NYSE hours)
+    from datetime import datetime
+    import pytz
+    now = datetime.now(pytz.timezone("US/Eastern"))
+    # Mon=0, Sun=6
+    if now.weekday() >= 5:  # Weekend
+        return False
+    # Regular trading hours: 9:30 - 16:00 ET
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    return market_open <= now <= market_close
 
 
 async def _recover_open_trade(symbol: str) -> str | None:
@@ -57,11 +75,11 @@ async def _recover_open_trade(symbol: str) -> str | None:
     except Exception as e:
         print(f"{Fore.RED}[loop] DB trade recovery error: {e}{Style.RESET_ALL}")
 
-    # 2. No DB trade — check if Alpaca has a position and create synthetic entry
+    # 2. No DB trade — check if broker has a position and create synthetic entry
     position = get_current_position(symbol)
     if position:
         now = datetime.now(timezone.utc)
-        print(f"{Fore.YELLOW}[loop] Found orphaned Alpaca {position['side']} position, creating DB entry{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}[loop] Found orphaned {position['side']} position, creating DB entry{Style.RESET_ALL}")
         try:
             trade_id = await write_trade_open(
                 symbol, position["side"], position["qty"],
@@ -131,12 +149,19 @@ async def run_intraday_loop():
                     break
 
             # 3. Load weights and score
-            weights, threshold = await load_active_weights()
+            weights, _ = await load_active_weights()
             score = compute_score(signal_values, weights)
+
+            # Use 4 thresholds from config for two-sided trading
+            long_entry = settings.LONG_ENTRY_THRESHOLD
+            long_exit = settings.LONG_EXIT_THRESHOLD
+            short_entry = settings.SHORT_ENTRY_THRESHOLD
+            short_exit = settings.SHORT_EXIT_THRESHOLD
 
             print(
                 f"{Fore.WHITE}[loop] {now.strftime('%H:%M:%S')} | "
                 f"Score: {score:+.3f} | "
+                f"Thresholds: L[{long_entry:+.2f}/{long_exit:+.2f}] S[{short_entry:+.2f}/{short_exit:+.2f}] | "
                 f"Signals: " +
                 " ".join(f"{k}={v:+.2f}" for k, v in signal_values.items())
             )
@@ -150,46 +175,81 @@ async def run_intraday_loop():
             current_price = float(bars["close"].iloc[-1])
             position_usd = get_account()["equity"] * 0.05  # 5% of current equity
 
-            if score > threshold and current_side != "long" and open_trade_id is None:
-                if current_side == "short":
-                    close_position(symbol)
-                print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > threshold={threshold:.3f}{Style.RESET_ALL}")
-                order_id = open_long(symbol, score, position_usd)
-                if order_id:
-                    qty = position_usd / current_price
-                    open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
+            # Fee calculation depends on broker/asset
+            if settings.BROKER == "alpaca" and settings.ASSET_CLASS == "crypto":
+                fee_rate = 0.0025  # 0.25% per side
+            elif settings.BROKER == "ibkr":
+                fee_rate = 0.00002  # ~$2 per $100k = 0.002%
+            else:
+                fee_rate = 0.0001  # Default 0.01%
 
-            elif score < -threshold and open_trade_id is not None and current_side == "long":
-                ALPACA_FEE_RATE = 0.0025  # 0.25% per side for crypto market orders
-                if position:
-                    qty = position["qty"]
-                    avg_entry = position["avg_entry_price"]
+            def calc_pnl(side: str) -> float:
+                """Calculate PnL including fees."""
+                if not position:
+                    return 0.0
+                qty = position["qty"]
+                avg_entry = position["avg_entry_price"]
+                if side == "long":
                     pnl_price = (current_price - avg_entry) * qty
-                    fee_open = avg_entry * qty * ALPACA_FEE_RATE
-                    fee_close = current_price * qty * ALPACA_FEE_RATE
-                    pnl = pnl_price - fee_open - fee_close
+                else:  # short
+                    pnl_price = (avg_entry - current_price) * qty
+                fee_open = avg_entry * qty * fee_rate
+                fee_close = current_price * qty * fee_rate
+                return pnl_price - fee_open - fee_close
+
+            # Two-sided trading logic with 4 thresholds
+            if current_side == "long":
+                # We have a LONG position - check for exit
+                if score < long_exit:
+                    pnl = calc_pnl("long")
+                    await write_trade_close(open_trade_id, current_price, pnl, now)
+                    open_trade_id = None
+                    print(f"{Fore.YELLOW}[loop] → CLOSE LONG  score={score:+.3f} < {long_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
+                    close_position(symbol)
+                    # Check if we should immediately open SHORT
+                    if score < short_entry and settings.ASSET_CLASS != "crypto":
+                        print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
+                        order_id = open_short(symbol, score, position_usd)
+                        if order_id:
+                            qty = position_usd / current_price
+                            open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
                 else:
-                    pnl = 0.0
-                await write_trade_close(open_trade_id, current_price, pnl, now)
-                open_trade_id = None
-                print(f"{Fore.YELLOW}[loop] → CLOSE LONG  score={score:+.3f} < -{threshold:.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
-                close_position(symbol)
-                if settings.ASSET_CLASS != "crypto":
-                    print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f}{Style.RESET_ALL}")
+                    print(f"[loop] → HOLD LONG  score={score:+.3f} >= {long_exit:+.3f}")
+
+            elif current_side == "short":
+                # We have a SHORT position - check for exit
+                if score > short_exit:
+                    pnl = calc_pnl("short")
+                    await write_trade_close(open_trade_id, current_price, pnl, now)
+                    open_trade_id = None
+                    print(f"{Fore.YELLOW}[loop] → CLOSE SHORT  score={score:+.3f} > {short_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
+                    close_position(symbol)
+                    # Check if we should immediately open LONG
+                    if score > long_entry:
+                        print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
+                        order_id = open_long(symbol, score, position_usd)
+                        if order_id:
+                            qty = position_usd / current_price
+                            open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
+                else:
+                    print(f"[loop] → HOLD SHORT  score={score:+.3f} <= {short_exit:+.3f}")
+
+            else:
+                # No position - check for entry signals
+                if score > long_entry:
+                    print(f"{Fore.GREEN}[loop] → OPEN LONG ${position_usd:.0f}  score={score:+.3f} > {long_entry:+.3f}{Style.RESET_ALL}")
+                    order_id = open_long(symbol, score, position_usd)
+                    if order_id:
+                        qty = position_usd / current_price
+                        open_trade_id = await write_trade_open(symbol, "long", qty, current_price, score, order_id, now)
+                elif score < short_entry and settings.ASSET_CLASS != "crypto":
+                    print(f"{Fore.RED}[loop] → OPEN SHORT ${position_usd:.0f}  score={score:+.3f} < {short_entry:+.3f}{Style.RESET_ALL}")
                     order_id = open_short(symbol, score, position_usd)
                     if order_id:
                         qty = position_usd / current_price
                         open_trade_id = await write_trade_open(symbol, "short", qty, current_price, score, order_id, now)
-
-            else:
-                pos_str = f"pozice={current_side}" if current_side else "bez pozice"
-                if score > 0:
-                    reason = f"score={score:+.3f} pod prahem {threshold:.3f}" if score <= threshold else f"score={score:+.3f} ale {pos_str}"
-                elif score < 0:
-                    reason = f"score={score:+.3f} nad prahem -{threshold:.3f}" if score >= -threshold else f"score={score:+.3f} ale {pos_str}"
                 else:
-                    reason = f"score={score:+.3f}"
-                print(f"[loop] → žádná akce  {reason}  ({pos_str})")
+                    print(f"[loop] → NO POSITION  score={score:+.3f} (need >{long_entry:+.3f} for long, <{short_entry:+.3f} for short)")
 
             # 6. Write signals and equity to DB
             await write_signals(symbol, signal_values, weights, score, now, channel_info)

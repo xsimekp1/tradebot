@@ -1,24 +1,59 @@
 """
 Channel-based signals using optimized support/resistance line detection.
 
-Algorithm: Shift-Rotate Coordinate Descent
-1. Start from initial line (max/min price horizontal, or previous solution)
+Algorithm: Adaptive Shift-Rotate Optimization
+1. Start from initial line (max/min price, or previous solution for warm-start)
 2. Alternate between:
-   - SHIFT: move line up/down by step (% of price range)
-   - ROTATE: rotate around pivot at 1/3 from current bar (~200 bars back)
-3. Decrease step sizes each iteration for finer refinement
-4. Repeat for N iterations
+   - SHIFT: move line up/down
+   - ROTATE: rotate around pivot at 1/3 from current bar
+3. Adaptive step sizes:
+   - If moving same direction as last time → accelerate (1.5x step)
+   - If oscillating (opposite direction) → decelerate (0.5x step)
+   - This gives momentum when far from optimum, precision when near
 
-This is more intuitive and stable than grid search:
-- Pivot at 1/3 from end keeps recent data stable during rotations
-- Alternating shift/rotate is coordinate descent optimization
-- Decreasing steps ensure convergence
+Benefits:
+- Faster convergence (momentum when heading right direction)
+- More stable (smaller steps when oscillating near optimum)
+- Pivot at 1/3 keeps recent data stable during rotations
 """
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 
 from src.signals.base import BaseSignal
+
+
+# =============================================================================
+# SHARED CHANNEL COMPUTATION - Direct sharing between signals
+# =============================================================================
+# channel_position computes lines and stores here.
+# channel_slope and channel_trend read from here if timestamp matches.
+# This gives ~3x speedup since we compute lines only once per bar.
+
+_shared_channel: Dict[str, Any] = {
+    "timestamp": None,  # Last bar timestamp (to detect if we're on same bar)
+    "r_slope": None,
+    "r_intercept": None,
+    "s_slope": None,
+    "s_intercept": None,
+}
+
+
+def _get_shared_channel(bar_timestamp: Any) -> Optional[Dict[str, Any]]:
+    """Get shared channel if computed for this bar."""
+    if _shared_channel["timestamp"] == bar_timestamp and bar_timestamp is not None:
+        return _shared_channel
+    return None
+
+
+def _set_shared_channel(bar_timestamp: Any, r_slope: float, r_intercept: float,
+                        s_slope: float, s_intercept: float) -> None:
+    """Store channel computation for other signals to use."""
+    _shared_channel["timestamp"] = bar_timestamp
+    _shared_channel["r_slope"] = r_slope
+    _shared_channel["r_intercept"] = r_intercept
+    _shared_channel["s_slope"] = s_slope
+    _shared_channel["s_intercept"] = s_intercept
 
 
 def find_optimal_resistance_line(
@@ -93,54 +128,80 @@ def find_optimal_resistance_line(
     best_slope = current_slope
     best_intercept = current_intercept
 
-    # Multi-scale optimization: coarse → fine
-    # Larger ranges to ensure we find the global optimum
-    scales = [
-        (price_range * 0.05, price_range / n * 0.5),   # Very coarse: 5% shift
-        (price_range * 0.02, price_range / n * 0.2),   # Coarse: 2% shift
-        (price_range * 0.008, price_range / n * 0.08), # Medium: 0.8% shift
-        (price_range * 0.003, price_range / n * 0.03), # Fine: 0.3% shift
-    ]
+    # Adaptive step optimization
+    # Start with base step, accelerate if same direction, decelerate if oscillating
+    base_shift_step = price_range * 0.02  # 2% of price range
+    base_rotate_step = price_range / n * 0.2
 
-    for shift_step, rotate_step in scales:
-        # Run multiple iterations at each scale
-        for _ in range(5):
-            improved = False
+    shift_step = base_shift_step
+    rotate_step = base_rotate_step
+    prev_shift_dir = 0  # -1, 0, or +1
+    prev_rotate_dir = 0
 
-            # === SHIFT PHASE: try multiple positions including 0 ===
-            for mult in [-3, -2, -1, 0, 1, 2, 3]:
-                test_intercept = current_intercept + mult * shift_step
-                score, avg_dist = evaluate(current_slope, test_intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = current_slope
-                    best_intercept = test_intercept
-                    best_avg_dist = avg_dist
-                    improved = True
+    min_shift_step = price_range * 0.001  # Don't go below 0.1%
+    max_shift_step = price_range * 0.10   # Don't go above 10%
+    min_rotate_step = price_range / n * 0.01
+    max_rotate_step = price_range / n * 1.0
 
-            current_slope = best_slope
-            current_intercept = best_intercept
+    for iteration in range(30):  # Max iterations
+        improved = False
 
-            # === ROTATE PHASE: rotate around pivot, try multiple angles ===
-            pivot_value = current_intercept + current_slope * pivot_idx
+        # === SHIFT PHASE ===
+        best_shift_mult = 0
+        for mult in [-2, -1, 0, 1, 2]:
+            test_intercept = current_intercept + mult * shift_step
+            score, avg_dist = evaluate(current_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = current_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                best_shift_mult = mult
+                improved = True
 
-            for mult in [-3, -2, -1, 0, 1, 2, 3]:
-                test_slope = current_slope + mult * rotate_step
-                test_intercept = pivot_value - test_slope * pivot_idx
-                score, avg_dist = evaluate(test_slope, test_intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = test_slope
-                    best_intercept = test_intercept
-                    best_avg_dist = avg_dist
-                    improved = True
+        # Adaptive step: same direction = accelerate, opposite = decelerate
+        if best_shift_mult != 0:
+            shift_dir = 1 if best_shift_mult > 0 else -1
+            if shift_dir == prev_shift_dir:
+                shift_step = min(shift_step * 1.5, max_shift_step)  # Accelerate
+            elif prev_shift_dir != 0 and shift_dir != prev_shift_dir:
+                shift_step = max(shift_step * 0.5, min_shift_step)  # Decelerate
+            prev_shift_dir = shift_dir
 
-            current_slope = best_slope
-            current_intercept = best_intercept
+        current_slope = best_slope
+        current_intercept = best_intercept
 
-            # Early exit from this scale if converged
-            if not improved:
-                break
+        # === ROTATE PHASE ===
+        pivot_value = current_intercept + current_slope * pivot_idx
+        best_rotate_mult = 0
+
+        for mult in [-2, -1, 0, 1, 2]:
+            test_slope = current_slope + mult * rotate_step
+            test_intercept = pivot_value - test_slope * pivot_idx
+            score, avg_dist = evaluate(test_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = test_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                best_rotate_mult = mult
+                improved = True
+
+        # Adaptive step for rotation
+        if best_rotate_mult != 0:
+            rotate_dir = 1 if best_rotate_mult > 0 else -1
+            if rotate_dir == prev_rotate_dir:
+                rotate_step = min(rotate_step * 1.5, max_rotate_step)
+            elif prev_rotate_dir != 0 and rotate_dir != prev_rotate_dir:
+                rotate_step = max(rotate_step * 0.5, min_rotate_step)
+            prev_rotate_dir = rotate_dir
+
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        # Converged if no improvement
+        if not improved:
+            break
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -207,51 +268,76 @@ def find_optimal_support_line(
     best_slope = current_slope
     best_intercept = current_intercept
 
-    # Multi-scale optimization: coarse → fine
-    scales = [
-        (price_range * 0.05, price_range / n * 0.5),   # Very coarse
-        (price_range * 0.02, price_range / n * 0.2),   # Coarse
-        (price_range * 0.008, price_range / n * 0.08), # Medium
-        (price_range * 0.003, price_range / n * 0.03), # Fine
-    ]
+    # Adaptive step optimization (same as resistance)
+    base_shift_step = price_range * 0.02
+    base_rotate_step = price_range / n * 0.2
 
-    for shift_step, rotate_step in scales:
-        for _ in range(5):
-            improved = False
+    shift_step = base_shift_step
+    rotate_step = base_rotate_step
+    prev_shift_dir = 0
+    prev_rotate_dir = 0
 
-            # === SHIFT PHASE ===
-            for mult in [-3, -2, -1, 0, 1, 2, 3]:
-                test_intercept = current_intercept + mult * shift_step
-                score, avg_dist = evaluate(current_slope, test_intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = current_slope
-                    best_intercept = test_intercept
-                    best_avg_dist = avg_dist
-                    improved = True
+    min_shift_step = price_range * 0.001
+    max_shift_step = price_range * 0.10
+    min_rotate_step = price_range / n * 0.01
+    max_rotate_step = price_range / n * 1.0
 
-            current_slope = best_slope
-            current_intercept = best_intercept
+    for iteration in range(30):
+        improved = False
 
-            # === ROTATE PHASE ===
-            pivot_value = current_intercept + current_slope * pivot_idx
+        # === SHIFT PHASE ===
+        best_shift_mult = 0
+        for mult in [-2, -1, 0, 1, 2]:
+            test_intercept = current_intercept + mult * shift_step
+            score, avg_dist = evaluate(current_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = current_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                best_shift_mult = mult
+                improved = True
 
-            for mult in [-3, -2, -1, 0, 1, 2, 3]:
-                test_slope = current_slope + mult * rotate_step
-                test_intercept = pivot_value - test_slope * pivot_idx
-                score, avg_dist = evaluate(test_slope, test_intercept)
-                if score < best_score:
-                    best_score = score
-                    best_slope = test_slope
-                    best_intercept = test_intercept
-                    best_avg_dist = avg_dist
-                    improved = True
+        if best_shift_mult != 0:
+            shift_dir = 1 if best_shift_mult > 0 else -1
+            if shift_dir == prev_shift_dir:
+                shift_step = min(shift_step * 1.5, max_shift_step)
+            elif prev_shift_dir != 0 and shift_dir != prev_shift_dir:
+                shift_step = max(shift_step * 0.5, min_shift_step)
+            prev_shift_dir = shift_dir
 
-            current_slope = best_slope
-            current_intercept = best_intercept
+        current_slope = best_slope
+        current_intercept = best_intercept
 
-            if not improved:
-                break
+        # === ROTATE PHASE ===
+        pivot_value = current_intercept + current_slope * pivot_idx
+        best_rotate_mult = 0
+
+        for mult in [-2, -1, 0, 1, 2]:
+            test_slope = current_slope + mult * rotate_step
+            test_intercept = pivot_value - test_slope * pivot_idx
+            score, avg_dist = evaluate(test_slope, test_intercept)
+            if score < best_score:
+                best_score = score
+                best_slope = test_slope
+                best_intercept = test_intercept
+                best_avg_dist = avg_dist
+                best_rotate_mult = mult
+                improved = True
+
+        if best_rotate_mult != 0:
+            rotate_dir = 1 if best_rotate_mult > 0 else -1
+            if rotate_dir == prev_rotate_dir:
+                rotate_step = min(rotate_step * 1.5, max_rotate_step)
+            elif prev_rotate_dir != 0 and rotate_dir != prev_rotate_dir:
+                rotate_step = max(rotate_step * 0.5, min_rotate_step)
+            prev_rotate_dir = rotate_dir
+
+        current_slope = best_slope
+        current_intercept = best_intercept
+
+        if not improved:
+            break
 
     return best_slope, best_intercept, best_avg_dist
 
@@ -286,6 +372,9 @@ class ChannelPositionSignal(BaseSignal):
         current_price = prices[-1]
         price_min, price_max = prices.min(), prices.max()
         price_range = price_max - price_min
+
+        # Get bar timestamp for sharing with other channel signals
+        bar_timestamp = bars.index[-1] if len(bars) > 0 else None
 
         # Find lines with warm-start
         r_slope, r_intercept, _ = find_optimal_resistance_line(
@@ -325,6 +414,9 @@ class ChannelPositionSignal(BaseSignal):
         self._prev_r_intercept = r_intercept
         self._prev_s_slope = s_slope
         self._prev_s_intercept = s_intercept
+
+        # Store for other channel signals (channel_slope, channel_trend) to reuse
+        _set_shared_channel(bar_timestamp, r_slope, r_intercept, s_slope, s_intercept)
 
         # Channel width
         channel_width = resistance_price - support_price
@@ -410,42 +502,51 @@ class ChannelSlopeSignal(BaseSignal):
 
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
         current_price = prices[-1]
-        price_min, price_max = prices.min(), prices.max()
-        price_range = price_max - price_min
+        bar_timestamp = bars.index[-1] if len(bars) > 0 else None
 
-        r_slope, r_intercept, _ = find_optimal_resistance_line(
-            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
-        )
-        s_slope, s_intercept, _ = find_optimal_support_line(
-            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
-        )
+        # Try to use shared channel (computed by channel_position for this bar)
+        shared = _get_shared_channel(bar_timestamp)
+        if shared is not None:
+            r_slope = shared["r_slope"]
+            s_slope = shared["s_slope"]
+        else:
+            # Fallback: compute ourselves
+            price_min, price_max = prices.min(), prices.max()
+            price_range = price_max - price_min
 
-        # Extrapolate lines to current bar for sanity check
-        n = len(prices) - 1
-        resistance_price = r_intercept + r_slope * n
-        support_price = s_intercept + s_slope * n
+            r_slope, r_intercept, _ = find_optimal_resistance_line(
+                prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+            )
+            s_slope, s_intercept, _ = find_optimal_support_line(
+                prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+            )
 
-        # SANITY CHECK: lines must be within reasonable bounds
-        max_deviation = price_range * 2.0
-        r_sane = abs(resistance_price - price_max) < max_deviation
-        s_sane = abs(support_price - price_min) < max_deviation
+            # Extrapolate lines to current bar for sanity check
+            n = len(prices) - 1
+            resistance_price = r_intercept + r_slope * n
+            support_price = s_intercept + s_slope * n
 
-        if not r_sane or not s_sane:
-            # Reset cache and recompute
-            self._prev_r_slope = None
-            self._prev_r_intercept = None
-            self._prev_s_slope = None
-            self._prev_s_intercept = None
-            if not r_sane:
-                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
-            if not s_sane:
-                s_slope, s_intercept, _ = find_optimal_support_line(prices)
+            # SANITY CHECK: lines must be within reasonable bounds
+            max_deviation = price_range * 2.0
+            r_sane = abs(resistance_price - price_max) < max_deviation
+            s_sane = abs(support_price - price_min) < max_deviation
 
-        # Cache for next call
-        self._prev_r_slope = r_slope
-        self._prev_r_intercept = r_intercept
-        self._prev_s_slope = s_slope
-        self._prev_s_intercept = s_intercept
+            if not r_sane or not s_sane:
+                # Reset cache and recompute
+                self._prev_r_slope = None
+                self._prev_r_intercept = None
+                self._prev_s_slope = None
+                self._prev_s_intercept = None
+                if not r_sane:
+                    r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+                if not s_sane:
+                    s_slope, s_intercept, _ = find_optimal_support_line(prices)
+
+            # Cache for next call
+            self._prev_r_slope = r_slope
+            self._prev_r_intercept = r_intercept
+            self._prev_s_slope = s_slope
+            self._prev_s_intercept = s_intercept
 
         # Average slope of channel
         avg_slope = (r_slope + s_slope) / 2
@@ -479,41 +580,50 @@ class ChannelTrendSignal(BaseSignal):
             return 0.0
 
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
-        price_min, price_max = prices.min(), prices.max()
-        price_range = price_max - price_min
+        bar_timestamp = bars.index[-1] if len(bars) > 0 else None
 
-        r_slope, r_intercept, _ = find_optimal_resistance_line(
-            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
-        )
-        s_slope, s_intercept, _ = find_optimal_support_line(
-            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
-        )
+        # Try to use shared channel (computed by channel_position for this bar)
+        shared = _get_shared_channel(bar_timestamp)
+        if shared is not None:
+            r_slope = shared["r_slope"]
+            s_slope = shared["s_slope"]
+        else:
+            # Fallback: compute ourselves
+            price_min, price_max = prices.min(), prices.max()
+            price_range = price_max - price_min
 
-        # Extrapolate lines to current bar for sanity check
-        n = len(prices) - 1
-        resistance_price = r_intercept + r_slope * n
-        support_price = s_intercept + s_slope * n
+            r_slope, r_intercept, _ = find_optimal_resistance_line(
+                prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+            )
+            s_slope, s_intercept, _ = find_optimal_support_line(
+                prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+            )
 
-        # SANITY CHECK: lines must be within reasonable bounds
-        max_deviation = price_range * 2.0
-        r_sane = abs(resistance_price - price_max) < max_deviation
-        s_sane = abs(support_price - price_min) < max_deviation
+            # Extrapolate lines to current bar for sanity check
+            n = len(prices) - 1
+            resistance_price = r_intercept + r_slope * n
+            support_price = s_intercept + s_slope * n
 
-        if not r_sane or not s_sane:
-            self._prev_r_slope = None
-            self._prev_r_intercept = None
-            self._prev_s_slope = None
-            self._prev_s_intercept = None
-            if not r_sane:
-                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
-            if not s_sane:
-                s_slope, s_intercept, _ = find_optimal_support_line(prices)
+            # SANITY CHECK: lines must be within reasonable bounds
+            max_deviation = price_range * 2.0
+            r_sane = abs(resistance_price - price_max) < max_deviation
+            s_sane = abs(support_price - price_min) < max_deviation
 
-        # Cache for next call
-        self._prev_r_slope = r_slope
-        self._prev_r_intercept = r_intercept
-        self._prev_s_slope = s_slope
-        self._prev_s_intercept = s_intercept
+            if not r_sane or not s_sane:
+                self._prev_r_slope = None
+                self._prev_r_intercept = None
+                self._prev_s_slope = None
+                self._prev_s_intercept = None
+                if not r_sane:
+                    r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+                if not s_sane:
+                    s_slope, s_intercept, _ = find_optimal_support_line(prices)
+
+            # Cache for next call
+            self._prev_r_slope = r_slope
+            self._prev_r_intercept = r_intercept
+            self._prev_s_slope = s_slope
+            self._prev_s_intercept = s_intercept
 
         # Binary trend signal: both rising = +1, both falling = -1, mixed = 0
         if r_slope > 0 and s_slope > 0:
