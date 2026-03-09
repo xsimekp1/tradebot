@@ -11,7 +11,7 @@ from src.signals.base import BaseSignal
 
 def find_optimal_resistance_line(
     prices: np.ndarray,
-    penalty: float = 20.0,
+    penalty: float = 8.0,  # Lower penalty = lines closer to price (more breaks allowed)
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
 ) -> Tuple[float, float, float]:
@@ -114,7 +114,7 @@ def find_optimal_resistance_line(
 
 def find_optimal_support_line(
     prices: np.ndarray,
-    penalty: float = 20.0,
+    penalty: float = 8.0,  # Lower penalty = lines closer to price (more breaks allowed)
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
 ) -> Tuple[float, float, float]:
