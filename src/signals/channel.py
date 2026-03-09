@@ -11,7 +11,8 @@ from src.signals.base import BaseSignal
 
 def find_optimal_resistance_line(
     prices: np.ndarray,
-    penalty: float = 8.0,  # Lower penalty = lines closer to price (more breaks allowed)
+    penalty: float = 20.0,
+    debug: bool = False,  # Enable to see optimization iterations
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
 ) -> Tuple[float, float, float]:
@@ -94,27 +95,44 @@ def find_optimal_resistance_line(
     # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
 
+    if debug:
+        print(f"[R-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
+        print(f"[R-DEBUG] max_price={max_price:.2f} at idx={max_idx}, min_price={min_price:.2f}")
+
     for slope_i in range(15):
         slope = -slope_range + (2 * slope_range * slope_i / 14)
         base_intercept = max_price - slope * max_idx
 
         for offset_i in range(15):
-            offset = -price_range * 0.1 + (price_range * 0.3 * offset_i / 14)
+            # Search from 0% to +10% around max price (resistance should be AT or slightly above highs)
+            offset = price_range * 0.10 * offset_i / 14
             intercept = base_intercept + offset
 
             score, avg_dist = evaluate(slope, intercept)
+            line_at_end = intercept + slope * (n - 1)
+
+            if debug and offset_i == 7:  # Middle offset, show for each slope
+                print(f"[R-DEBUG] slope[{slope_i}]={slope:.6f} offset={offset:.2f} line@end={line_at_end:.2f} score={score:.1f} avg_dist={avg_dist:.2f}")
+
             if score < best_score:
                 best_score = score
                 best_slope = slope
                 best_intercept = intercept
                 best_avg_dist = avg_dist
+                if debug:
+                    print(f"[R-DEBUG] >>> NEW BEST: score={score:.1f} line@end={line_at_end:.2f}")
+
+    if debug:
+        final_line = best_intercept + best_slope * (n - 1)
+        print(f"[R-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
 
     return best_slope, best_intercept, best_avg_dist
 
 
 def find_optimal_support_line(
     prices: np.ndarray,
-    penalty: float = 8.0,  # Lower penalty = lines closer to price (more breaks allowed)
+    penalty: float = 20.0,
+    debug: bool = False,  # Enable to see optimization iterations
     prev_slope: Optional[float] = None,
     prev_intercept: Optional[float] = None,
 ) -> Tuple[float, float, float]:
@@ -192,20 +210,36 @@ def find_optimal_support_line(
     # Full grid search (15x15) - either first call or local search failed or drifted too far
     slope_range = price_range / n * 0.5
 
+    if debug:
+        print(f"[S-DEBUG] Grid search: price_range={price_range:.2f}, slope_range={slope_range:.6f}")
+        print(f"[S-DEBUG] min_price={min_price:.2f} at idx={min_idx}, max_price={max_price:.2f}")
+
     for slope_i in range(15):
         slope = -slope_range + (2 * slope_range * slope_i / 14)
         base_intercept = min_price - slope * min_idx
 
         for offset_i in range(15):
-            offset = -price_range * 0.3 + (price_range * 0.1 * offset_i / 14)
+            # Search from -10% to 0% around min price (support should be AT or slightly below lows)
+            offset = -price_range * 0.10 + (price_range * 0.10 * offset_i / 14)
             intercept = base_intercept + offset
 
             score, avg_dist = evaluate(slope, intercept)
+            line_at_end = intercept + slope * (n - 1)
+
+            if debug and offset_i == 7:  # Middle offset, show for each slope
+                print(f"[S-DEBUG] slope[{slope_i}]={slope:.6f} offset={offset:.2f} line@end={line_at_end:.2f} score={score:.1f} avg_dist={avg_dist:.2f}")
+
             if score < best_score:
                 best_score = score
                 best_slope = slope
                 best_intercept = intercept
                 best_avg_dist = avg_dist
+                if debug:
+                    print(f"[S-DEBUG] >>> NEW BEST: score={score:.1f} line@end={line_at_end:.2f}")
+
+    if debug:
+        final_line = best_intercept + best_slope * (n - 1)
+        print(f"[S-DEBUG] FINAL: slope={best_slope:.6f} intercept={best_intercept:.2f} line@end={final_line:.2f} score={best_score:.1f}")
 
     return best_slope, best_intercept, best_avg_dist
 
