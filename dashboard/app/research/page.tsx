@@ -103,7 +103,7 @@ export default function ResearchPage() {
                 {activeWeights ? `v${activeWeights.version} — weights currently used for scoring` : "defaults"}
               </p>
             </div>
-            <ForceWeightsButton />
+            {/* <ForceWeightsButton /> */}
           </div>
           {activeWeights ? (
             <WeightsComparison weights={activeWeights.weights} />
