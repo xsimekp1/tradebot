@@ -200,18 +200,21 @@ function ForceWeightsButton() {
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<string | null>(null);
 
-  const handleForce = async () => {
-    if (!confirm("Přepsat váhy na:\n• channel_position: 40%\n• channel_trend: 20%\n• ostatní proporčně snížené\n\nPokračovat?")) {
+  const handleForce = async (reset: boolean = false) => {
+    const msg = reset
+      ? "RESET: Smazat VŠECHNA historická data vah a začít od v1?\n\n• channel_position: 40%\n• channel_trend: 20%\n• ostatní proporčně\n\nTOTO SMAŽE HISTORII EVOLUCE!"
+      : "Přepsat váhy na:\n• channel_position: 40%\n• channel_trend: 20%\n• ostatní proporčně snížené\n\nPokračovat?";
+    if (!confirm(msg)) {
       return;
     }
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("/api/force-weights", { method: "POST" });
+      const url = reset ? "/api/force-weights?reset=true" : "/api/force-weights";
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (data.success) {
-        setResult(`✓ Váhy aktualizovány (v${data.version})`);
-        // Refresh page after 2s
+        setResult(`✓ ${reset ? "Reset" : "Aktualizováno"} (v${data.version})`);
         setTimeout(() => window.location.reload(), 2000);
       } else {
         setResult(`✗ ${data.error}`);
@@ -226,11 +229,18 @@ function ForceWeightsButton() {
     <div className="flex items-center gap-2">
       {result && <span className={`text-xs ${result.startsWith("✓") ? "text-green-400" : "text-red-400"}`}>{result}</span>}
       <button
-        onClick={handleForce}
+        onClick={() => handleForce(false)}
         disabled={loading}
         className="text-xs px-2 py-1 rounded border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
       >
         {loading ? "..." : "Force Weights"}
+      </button>
+      <button
+        onClick={() => handleForce(true)}
+        disabled={loading}
+        className="text-xs px-2 py-1 rounded border border-red-500/50 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+      >
+        Reset All
       </button>
     </div>
   );

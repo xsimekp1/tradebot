@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import getDb from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,40 @@ const TARGET_WEIGHTS = {
   atr: 0.02,
 };
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const sql = getDb();
 
-    // Get current active model
+    // Check for reset mode (deletes all corrupted data)
+    const url = new URL(request.url);
+    const reset = url.searchParams.get("reset") === "true";
+
+    if (reset) {
+      // Delete ALL signal_weights - nuclear option for corrupted DB
+      await sql`DELETE FROM signal_weights`;
+
+      // Create fresh v1 with clean target weights
+      const newId = randomUUID();
+      await sql`
+        INSERT INTO signal_weights (id, version, weights, performance, is_active)
+        VALUES (
+          ${newId},
+          1,
+          ${JSON.stringify(TARGET_WEIGHTS)}::jsonb,
+          ${JSON.stringify({ source: "force-weights-reset" })}::jsonb,
+          TRUE
+        )
+      `;
+
+      return NextResponse.json({
+        success: true,
+        version: 1,
+        reset: true,
+        newWeights: TARGET_WEIGHTS,
+      });
+    }
+
+    // Normal mode: just create new version
     const [current] = await sql`
       SELECT id, version, weights, performance
       FROM signal_weights
@@ -30,7 +60,6 @@ export async function POST() {
       LIMIT 1
     `;
 
-    const oldWeights = current?.weights as Record<string, number> | null;
     const oldVersion = (current?.version as number) ?? 0;
 
     // Deactivate all existing weights
@@ -38,9 +67,11 @@ export async function POST() {
 
     // Create fresh new version with clean target weights
     const newVersion = oldVersion + 1;
+    const newId = randomUUID();
     await sql`
-      INSERT INTO signal_weights (version, weights, performance, is_active)
+      INSERT INTO signal_weights (id, version, weights, performance, is_active)
       VALUES (
+        ${newId},
         ${newVersion},
         ${JSON.stringify(TARGET_WEIGHTS)}::jsonb,
         ${JSON.stringify({ source: "force-weights", previous_version: oldVersion })}::jsonb,
