@@ -15,7 +15,7 @@ from src.signals import ALL_SIGNALS, make_signals
 
 LOOKBACK = 600  # Must be >= max signal lookback (channel uses 600)
 TRAIN_WEEKS = 4
-TEST_DAYS = 7
+TEST_DAYS = 14  # 14 days = ~10 trading days, minus 600 lookback = ~7 days actual test
 SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 

@@ -6,7 +6,15 @@ import {
 } from "recharts";
 
 type EquityPoint = { ts: string; eq: number };
-type TradeEvent = { type: "buy" | "sell"; price: number; ts: string; pnl?: number };
+type TradeEvent = {
+  action?: "open" | "close";
+  side?: "long" | "short";
+  close_reason?: "signal" | "stop_loss";
+  type?: "buy" | "sell";  // Legacy format
+  price: number;
+  ts: string;
+  pnl?: number;
+};
 
 type Props = {
   equityCurve: EquityPoint[];
@@ -23,6 +31,37 @@ type Props = {
   version: number;
 };
 
+// Open Long - green up triangle
+function OpenLongShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
+  return <polygon points={`${cx},${cy - 8} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}`} fill="#4ade80" opacity={0.9} />;
+}
+
+// Close Long by Signal - green down triangle
+function CloseLongSignalShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
+  return <polygon points={`${cx},${cy + 8} ${cx - 5},${cy - 4} ${cx + 5},${cy - 4}`} fill="#4ade80" opacity={0.9} />;
+}
+
+// Close Long by Stop Loss - red X
+function CloseStopLossShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
+  return (
+    <g>
+      <line x1={cx - 5} y1={cy - 5} x2={cx + 5} y2={cy + 5} stroke="#f87171" strokeWidth={2} />
+      <line x1={cx + 5} y1={cy - 5} x2={cx - 5} y2={cy + 5} stroke="#f87171" strokeWidth={2} />
+    </g>
+  );
+}
+
+// Open Short - red down triangle
+function OpenShortShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
+  return <polygon points={`${cx},${cy + 8} ${cx - 5},${cy - 4} ${cx + 5},${cy - 4}`} fill="#f87171" opacity={0.9} />;
+}
+
+// Close Short by Signal - red up triangle
+function CloseShortSignalShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
+  return <polygon points={`${cx},${cy - 8} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}`} fill="#f87171" opacity={0.9} />;
+}
+
+// Legacy shapes for old format
 function BuyShape({ cx = 0, cy = 0 }: { cx?: number; cy?: number }) {
   return <polygon points={`${cx},${cy - 8} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}`} fill="#4ade80" opacity={0.9} />;
 }
@@ -58,7 +97,7 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
             Best Backtest — OOS (v{version})
           </h2>
-          <p className="text-xs text-gray-600 mt-0.5">7-day out-of-sample simulation · ▲ buy &nbsp; ▼ sell</p>
+          <p className="text-xs text-gray-600 mt-0.5">14-day out-of-sample simulation · ▲ open long &nbsp; ▼ close &nbsp; ✕ stop loss</p>
         </div>
         <div className="flex gap-3 text-xs text-right">
           <div>
@@ -138,13 +177,28 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
             dot={false}
             activeDot={{ r: 2 }}
           />
-          {tradeMarkers.map((t, i) =>
-            t.type === "buy" ? (
+          {tradeMarkers.map((t, i) => {
+            // New format: action + side + close_reason
+            if (t.action && t.side) {
+              if (t.action === "open" && t.side === "long") {
+                return <ReferenceDot key={`ol${i}`} x={t.ts} y={t.eq} r={0} shape={<OpenLongShape />} />;
+              } else if (t.action === "open" && t.side === "short") {
+                return <ReferenceDot key={`os${i}`} x={t.ts} y={t.eq} r={0} shape={<OpenShortShape />} />;
+              } else if (t.action === "close" && t.close_reason === "stop_loss") {
+                return <ReferenceDot key={`sl${i}`} x={t.ts} y={t.eq} r={0} shape={<CloseStopLossShape />} />;
+              } else if (t.action === "close" && t.side === "long") {
+                return <ReferenceDot key={`cl${i}`} x={t.ts} y={t.eq} r={0} shape={<CloseLongSignalShape />} />;
+              } else if (t.action === "close" && t.side === "short") {
+                return <ReferenceDot key={`cs${i}`} x={t.ts} y={t.eq} r={0} shape={<CloseShortSignalShape />} />;
+              }
+            }
+            // Legacy format: type = "buy" | "sell"
+            return t.type === "buy" ? (
               <ReferenceDot key={`b${i}`} x={t.ts} y={t.eq} r={0} shape={<BuyShape />} />
             ) : (
               <ReferenceDot key={`s${i}`} x={t.ts} y={t.eq} r={0} shape={<SellShape />} />
-            )
-          )}
+            );
+          })}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
