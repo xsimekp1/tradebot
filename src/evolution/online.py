@@ -189,47 +189,61 @@ def update_performance(version: int, performance: dict) -> None:
 # ── Data ──────────────────────────────────────────────────────────────────────
 
 def fetch_bars(symbol: str):
+    """Fetch historical bars from Yahoo Finance (free, no API key)."""
     import pandas as pd
-    from alpaca.data.timeframe import TimeFrame
+    import httpx
 
     total_days = TRAIN_WEEKS * 7 + TEST_DAYS
     end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    start = end - timedelta(days=total_days)
 
-    print(f"Fetching {symbol} {total_days}d of 1-min bars...")
+    # Yahoo limits: 1m=7d, 2m=60d, 5m=60d
+    # For 35 days, use 2m interval
+    interval = "2m" if total_days > 7 else "1m"
+    range_str = f"{total_days}d"
 
-    is_crypto = "/" in symbol or settings.ASSET_CLASS == "crypto"
-    if is_crypto:
-        from alpaca.data.historical import CryptoHistoricalDataClient
-        from alpaca.data.requests import CryptoBarsRequest
-        client = CryptoHistoricalDataClient(
-            api_key=settings.ALPACA_API_KEY, secret_key=settings.ALPACA_SECRET_KEY
-        )
-        bars = client.get_crypto_bars(
-            CryptoBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, start=start, end=end)
-        )
-    else:
-        from alpaca.data.historical import StockHistoricalDataClient
-        from alpaca.data.requests import StockBarsRequest
-        client = StockHistoricalDataClient(
-            api_key=settings.ALPACA_API_KEY, secret_key=settings.ALPACA_SECRET_KEY
-        )
-        bars = client.get_stock_bars(
-            StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, start=start, end=end, feed="iex")
-        )
+    print(f"Fetching {symbol} {total_days}d of {interval} bars from Yahoo...")
 
-    df = bars.df
-    if df.empty:
-        raise RuntimeError(f"No data returned for {symbol}")
-    if isinstance(df.index, pd.MultiIndex):
-        df = df.xs(symbol, level=0)
-    df = df.rename(columns=str.lower)
-    cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
-    df = df[cols].sort_index()
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        params = {"interval": interval, "range": range_str}
+
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            data = resp.json()
+
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            raise RuntimeError(f"No data returned for {symbol}")
+
+        quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+        timestamps = result[0].get("timestamp", [])
+
+        if not timestamps:
+            raise RuntimeError(f"No timestamps for {symbol}")
+
+        df = pd.DataFrame({
+            "open": quote.get("open", []),
+            "high": quote.get("high", []),
+            "low": quote.get("low", []),
+            "close": quote.get("close", []),
+            "volume": quote.get("volume", []),
+        }, index=pd.to_datetime(timestamps, unit="s", utc=True))
+
+        df = df.dropna()  # Remove NaN rows
+
+        if df.empty:
+            raise RuntimeError(f"No valid data for {symbol}")
+
+    except Exception as e:
+        raise RuntimeError(f"Yahoo fetch failed: {e}")
 
     test_cutoff = end - timedelta(days=TEST_DAYS)
     df_train = df[df.index < test_cutoff]
     df_test = df[df.index >= test_cutoff]
+
+    if len(df_train) < 100:
+        raise RuntimeError(f"Not enough training data: {len(df_train)} bars")
 
     print(f"  Train: {len(df_train):,} bars ({df_train.index[0].strftime('%m-%d')} to {df_train.index[-1].strftime('%m-%d')})")
     print(f"  Test:  {len(df_test):,} bars  ({df_test.index[0].strftime('%m-%d')} to {df_test.index[-1].strftime('%m-%d')})")
@@ -473,7 +487,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
 
     evolution_start = time.time()
 
-    print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}, thr={current_threshold:.3f}, bias={current_entry_bias:.3f}){Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Evolution v{version} -> {n_mutations} mutations (sigma={sigma}, thr={current_threshold:.3f}, bias={current_entry_bias:.3f}){Style.RESET_ALL}")
     top = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
 

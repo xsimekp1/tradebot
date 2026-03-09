@@ -25,7 +25,8 @@
       "Bash(RAILWAY_MODE=trade python:*)",
       "Bash(RAILWAY_MODE=trade timeout 30 python:*)",
       "Bash(RAILWAY_MODE=trade timeout 45 python:*)",
-      "Bash(RAILWAY_MODE=trade timeout 60 python:*)"
+      "Bash(RAILWAY_MODE=trade timeout 60 python:*)",
+      "Bash(RAILWAY_MODE=evolve EVOLVE_INTERVAL=30 EVOLVE_MUTATIONS=5 timeout 90 python:*)"
     ]
   }
 }
