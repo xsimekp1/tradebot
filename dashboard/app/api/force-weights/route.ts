@@ -37,8 +37,8 @@ export async function POST(request: Request) {
         VALUES (
           ${newId},
           1,
-          ${JSON.stringify(TARGET_WEIGHTS)}::jsonb,
-          ${JSON.stringify({ source: "force-weights-reset" })}::jsonb,
+          ${sql.json(TARGET_WEIGHTS)},
+          ${sql.json({ source: "force-weights-reset" })},
           TRUE
         )
       `;
@@ -73,8 +73,8 @@ export async function POST(request: Request) {
       VALUES (
         ${newId},
         ${newVersion},
-        ${JSON.stringify(TARGET_WEIGHTS)}::jsonb,
-        ${JSON.stringify({ source: "force-weights", previous_version: oldVersion })}::jsonb,
+        ${sql.json(TARGET_WEIGHTS)},
+        ${sql.json({ source: "force-weights", previous_version: oldVersion })},
         TRUE
       )
     `;
