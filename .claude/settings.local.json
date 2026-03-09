@@ -28,7 +28,16 @@
       "Bash(RAILWAY_MODE=trade timeout 60 python:*)",
       "Bash(RAILWAY_MODE=evolve EVOLVE_INTERVAL=30 EVOLVE_MUTATIONS=5 timeout 90 python:*)",
       "Bash(RAILWAY_MODE=evolve EVOLVE_MUTATIONS=10 python main.py:*)",
-      "Bash(RAILWAY_MODE=trade timeout 120 python:*)"
+      "Bash(RAILWAY_MODE=trade timeout 120 python:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(pkill:*)",
+      "Bash(for pid in 29780 62049 14476 60362 30239)",
+      "Bash(do)",
+      "Bash(kill:*)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(findstr:*)"
     ]
   }
 }

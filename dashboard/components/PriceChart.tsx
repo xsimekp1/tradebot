@@ -279,7 +279,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     const vwapData = calculateVWAP(prices);
 
     // ONLY use backend lines - no frontend fallback to avoid "jump" on page load
-    // The bot uses Alpaca 1-min data, frontend has Coinbase 5-min data = different results
+    // Bot computes channel from Yahoo Finance data, frontend just displays it
     let resistanceLine: ResistanceLine | null = null;
     let supportLine: ResistanceLine | null = null;
 
@@ -430,7 +430,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
       {showChannel && (resistanceInfo || supportInfo) && (
         <div className="text-xs mb-2 px-1 space-y-1">
           <div className="text-gray-500 text-[10px] uppercase tracking-wide">
-            Channel {backendChannelInfo?.support_slope !== undefined ? <span className="text-indigo-400">(Bot data — Alpaca 1m)</span> : <span className="text-gray-600">(Chart estimate)</span>}
+            Channel {backendChannelInfo?.support_slope !== undefined ? <span className="text-indigo-400">(Bot data)</span> : <span className="text-gray-600">(Chart estimate)</span>}
           </div>
           <div className="flex flex-wrap gap-2">
             {resistanceInfo && (
@@ -516,7 +516,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
             formatter={(v: number, name: string) => {
               if (name.includes("Gradient")) return null;
               const labels: Record<string, string> = {
-                close: "BTC/USD",
+                close: "Price",
                 resistance: "Resistance",
                 support: "Support",
                 vwap: "VWAP",

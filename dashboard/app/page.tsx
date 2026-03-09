@@ -73,12 +73,10 @@ export default function Dashboard() {
       {/* Price chart */}
       <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
         <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
-          {status?.symbol ?? "..."} · 1m · {priceData?.source === "ibkr" ? (
+          {status?.symbol ?? "..."} · 1m · {priceData?.source === "yahoo" ? (
+            <span className="text-indigo-400">Yahoo Finance</span>
+          ) : priceData?.source === "ibkr" ? (
             <span className="text-indigo-400">IBKR</span>
-          ) : priceData?.source === "alpaca" ? (
-            <span className="text-indigo-400">Alpaca</span>
-          ) : priceData?.source === "coinbase-fallback" ? (
-            <span className="text-yellow-500">Coinbase (fallback)</span>
           ) : (
             <span className="text-gray-600">loading...</span>
           )}
