@@ -323,11 +323,6 @@ class ChannelPositionSignal(BaseSignal):
         # Position in channel: 0 = at support, 1 = at resistance
         position = (current_price - support_price) / channel_width
 
-        # If price is outside channel bounds, signal is unreliable — return neutral
-        if position < 0.0 or position > 1.0:
-            self.last_channel_info = None
-            return 0.0
-
         # Support line diagnostics
         support_line_vals = s_intercept + s_slope * np.arange(len(prices))
         s_breaks = int(np.sum(prices < support_line_vals))
@@ -359,6 +354,14 @@ class ChannelPositionSignal(BaseSignal):
             "resistance_slope": round(r_slope, 6),
             "ref_timestamp": last_bar_time,  # When these values were computed
         }
+
+        # Handle price outside channel bounds:
+        # Below support (position < 0) → strong buy (+1)
+        # Above resistance (position > 1) → strong sell (-1)
+        if position < 0.0:
+            return 1.0  # Below support = oversold = strong buy
+        if position > 1.0:
+            return -1.0  # Above resistance = overbought = strong sell
 
         # Linear signal: +1 at support, -1 at resistance
         linear_signal = 1.0 - 2.0 * position
