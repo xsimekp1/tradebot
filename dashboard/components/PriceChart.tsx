@@ -1,12 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, ReferenceLine, ReferenceDot,
 } from "recharts";
 
-type Candle = { time: number; close: number };
+type Candle = {
+  time: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  close: number;
+  volume?: number;
+};
 type Trade = {
   side: string;
   entry_price: string;
@@ -238,15 +245,38 @@ function findOptimalSupportLine(
 
 const MS_PER_BAR = 60_000; // backend uses 1-minute bars
 
+// Calculate rolling VWAP from OHLCV data
+function calculateVWAP(prices: Candle[]): (number | null)[] {
+  let cumTypicalPriceVol = 0;
+  let cumVolume = 0;
+
+  return prices.map((p) => {
+    if (p.high === undefined || p.low === undefined || p.volume === undefined) {
+      return null;
+    }
+    const typicalPrice = (p.high + p.low + p.close) / 3;
+    cumTypicalPriceVol += typicalPrice * p.volume;
+    cumVolume += p.volume;
+    return cumVolume > 0 ? cumTypicalPriceVol / cumVolume : null;
+  });
+}
+
 export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
-  const { resistanceLine, supportLine, yMin, yMax } = useMemo(() => {
+  // Indicator toggle states
+  const [showVWAP, setShowVWAP] = useState(true);
+  const [showChannel, setShowChannel] = useState(true);
+
+  const { resistanceLine, supportLine, vwapData, yMin, yMax } = useMemo(() => {
     if (!prices || prices.length === 0) {
-      return { resistanceLine: null, supportLine: null, yMin: 0, yMax: 0 };
+      return { resistanceLine: null, supportLine: null, vwapData: [], yMin: 0, yMax: 0 };
     }
 
     const closes = prices.map((p) => p.close);
     let yMinBase = Math.min(...closes);
     let yMaxBase = Math.max(...closes);
+
+    // Calculate rolling VWAP
+    const vwapData = calculateVWAP(prices);
 
     // Use backend lines if available (same data the bot actually trades on)
     let resistanceLine: ResistanceLine | null = null;
@@ -297,6 +327,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     return {
       resistanceLine,
       supportLine,
+      vwapData,
       yMin: yMinBase * 0.9995,
       yMax: yMaxBase * 1.0005,
     };
@@ -330,16 +361,22 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
   });
 
   // Build data with line values
-  const data = prices.map((p) => {
+  const data = prices.map((p, i) => {
     const row: Record<string, number | null> = { time: p.time, close: p.close };
-    if (resistanceLine) {
+    if (resistanceLine && showChannel) {
       row.resistance = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
     }
-    if (supportLine) {
+    if (supportLine && showChannel) {
       row.support = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
+    }
+    if (vwapData[i] !== null && showVWAP) {
+      row.vwap = vwapData[i];
     }
     return row;
   });
+
+  // Current VWAP value
+  const currentVWAP = vwapData[vwapData.length - 1];
 
   // Current distance to lines
   const currentPrice = prices[prices.length - 1].close;
@@ -366,11 +403,36 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
 
   return (
     <div>
+      {/* Indicator toggles */}
+      <div className="flex items-center gap-3 mb-2 px-1">
+        <span className="text-gray-500 text-[10px] uppercase tracking-wide">Indicators:</span>
+        <button
+          onClick={() => setShowChannel(!showChannel)}
+          className={`text-xs px-2 py-1 rounded border transition-colors ${
+            showChannel
+              ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300"
+              : "bg-gray-800/50 border-gray-700 text-gray-500"
+          }`}
+        >
+          Channel
+        </button>
+        <button
+          onClick={() => setShowVWAP(!showVWAP)}
+          className={`text-xs px-2 py-1 rounded border transition-colors ${
+            showVWAP
+              ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+              : "bg-gray-800/50 border-gray-700 text-gray-500"
+          }`}
+        >
+          VWAP {currentVWAP ? `$${(currentVWAP / 1000).toFixed(2)}k` : ""}
+        </button>
+      </div>
+
       {/* Line info indicators */}
-      {(resistanceInfo || supportInfo) && (
+      {showChannel && (resistanceInfo || supportInfo) && (
         <div className="text-xs mb-2 px-1 space-y-1">
           <div className="text-gray-500 text-[10px] uppercase tracking-wide">
-            Channel Lines {backendChannelInfo?.support_slope !== undefined ? <span className="text-indigo-400">(Bot data — Alpaca 1m)</span> : <span className="text-gray-600">(Chart estimate)</span>}
+            Channel {backendChannelInfo?.support_slope !== undefined ? <span className="text-indigo-400">(Bot data — Alpaca 1m)</span> : <span className="text-gray-600">(Chart estimate)</span>}
           </div>
           <div className="flex flex-wrap gap-2">
             {resistanceInfo && (
@@ -455,14 +517,31 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
             labelFormatter={(v) => new Date(v as number).toLocaleTimeString()}
             formatter={(v: number, name: string) => {
               if (name.includes("Gradient")) return null;
-              const label = name === "close" ? "BTC/USD" : name === "resistance" ? "Resistance" : "Support";
-              return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, label];
+              const labels: Record<string, string> = {
+                close: "BTC/USD",
+                resistance: "Resistance",
+                support: "Support",
+                vwap: "VWAP",
+              };
+              return [`$${v.toLocaleString("en", { minimumFractionDigits: 2 })}`, labels[name] ?? name];
             }}
           />
           {/* Price line */}
           <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+          {/* VWAP line */}
+          {showVWAP && (
+            <Line
+              type="monotone"
+              dataKey="vwap"
+              stroke="#f59e0b"
+              strokeWidth={2}
+              strokeOpacity={0.8}
+              dot={false}
+              connectNulls={true}
+            />
+          )}
           {/* Resistance line with glow */}
-          {resistanceLine && (
+          {showChannel && resistanceLine && (
             <Line
               type="linear"
               dataKey="resistance"
@@ -476,7 +555,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
             />
           )}
           {/* Support line with glow */}
-          {supportLine && (
+          {showChannel && supportLine && (
             <Line
               type="linear"
               dataKey="support"

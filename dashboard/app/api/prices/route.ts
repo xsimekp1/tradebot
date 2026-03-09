@@ -18,7 +18,11 @@ export async function GET() {
       .slice(-120)
       .map((k) => ({
         time: k[0] * 1000,
+        open: k[3],
+        high: k[2],
+        low: k[1],
         close: k[4],
+        volume: k[5],
       }));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
