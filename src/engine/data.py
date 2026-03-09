@@ -8,32 +8,8 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from src.config import settings
-from src.brokers import get_broker
-
-# Global broker instance for data (lazy initialized)
-_broker = None
-
-
-def _get_broker():
-    """Get or create broker instance based on settings."""
-    global _broker
-    if _broker is None:
-        _broker = get_broker(settings.BROKER)
-    return _broker
-
-
-def _run_async(coro):
-    """Run async coroutine from sync context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
-        return loop.run_until_complete(coro)
-    except RuntimeError:
-        return asyncio.run(coro)
+# Use shared broker instance from executor to avoid multiple connections
+from src.engine.executor import _get_broker, _run_async
 
 
 def fetch_bars(symbol: str, limit: int = 100) -> pd.DataFrame:

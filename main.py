@@ -6,6 +6,10 @@ Modes (set via RAILWAY_MODE env var):
   trade    — intraday trading loop + nightly weight mutation
   both     — evolution + trading in parallel
 """
+# Apply nest_asyncio FIRST before any asyncio imports (needed for ib_insync)
+import nest_asyncio
+nest_asyncio.apply()
+
 import asyncio
 import os
 from datetime import datetime, timezone

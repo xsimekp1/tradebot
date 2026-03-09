@@ -3,6 +3,11 @@ Trade executor - handles position management through broker abstraction.
 Supports Alpaca, OANDA, and IBKR brokers.
 """
 import asyncio
+
+# Apply nest_asyncio early to allow nested event loops (needed for ib_insync)
+import nest_asyncio
+nest_asyncio.apply()
+
 from src.config import settings
 from src.brokers import get_broker, OrderSide, OrderType
 
@@ -20,17 +25,17 @@ def _get_broker():
 
 
 def _run_async(coro):
-    """Run async coroutine from sync context."""
+    """Run async coroutine - works both inside and outside async context."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Create a new task if we're already in an async context
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
-        return loop.run_until_complete(coro)
+        loop = asyncio.get_running_loop()
     except RuntimeError:
+        loop = None
+
+    if loop is not None:
+        # Already in an async context - use nest_asyncio to run nested
+        return asyncio.get_event_loop().run_until_complete(coro)
+    else:
+        # No running loop - create one
         return asyncio.run(coro)
 
 

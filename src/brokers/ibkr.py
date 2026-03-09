@@ -38,7 +38,9 @@ class IBKRBroker(BaseBroker):
     def _get_ib(self):
         """Get or create IB connection."""
         if self._ib is None:
-            from ib_insync import IB
+            from ib_insync import IB, util
+            # startLoop() is needed for proper event loop integration
+            util.startLoop()
             self._ib = IB()
 
         if not self._ib.isConnected():

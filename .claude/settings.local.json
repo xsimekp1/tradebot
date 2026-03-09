@@ -21,7 +21,11 @@
       "Bash(powershell -Command \"railway variables --service tradebot 2>&1\")",
       "WebFetch(domain:developer.oanda.com)",
       "Bash(git restore:*)",
-      "Bash(git revert:*)"
+      "Bash(git revert:*)",
+      "Bash(RAILWAY_MODE=trade python:*)",
+      "Bash(RAILWAY_MODE=trade timeout 30 python:*)",
+      "Bash(RAILWAY_MODE=trade timeout 45 python:*)",
+      "Bash(RAILWAY_MODE=trade timeout 60 python:*)"
     ]
   }
 }
