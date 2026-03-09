@@ -55,6 +55,23 @@ def is_market_open() -> bool:
     return market_open <= now <= market_close
 
 
+def is_near_market_close(minutes_before: int = 5) -> bool:
+    """Check if we're within X minutes of market close. Used for day trading."""
+    if settings.ASSET_CLASS in ("crypto", "forex"):
+        return False  # 24/7 markets don't close
+
+    import pytz
+    now = datetime.now(pytz.timezone("US/Eastern"))
+    if now.weekday() >= 5:
+        return False
+
+    # Market closes at 16:00 ET
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    cutoff = market_close - timedelta(minutes=minutes_before)
+
+    return cutoff <= now < market_close
+
+
 async def _recover_open_trade(symbol: str) -> str | None:
     """On startup, find any open trade in DB. If Alpaca has a position but DB doesn't, create a synthetic entry."""
     from sqlalchemy import select
@@ -198,12 +215,22 @@ async def run_intraday_loop():
                 fee_close = current_price * qty * fee_rate
                 return pnl_price - fee_open - fee_close
 
+            # END OF DAY - close all positions 5 minutes before market close
+            if settings.ASSET_CLASS == "stock" and is_near_market_close(minutes_before=5) and current_side:
+                pnl = calc_pnl(current_side)
+                await write_trade_close(open_trade_id, current_price, pnl, now, close_reason="end_of_day")
+                open_trade_id = None
+                print(f"{Fore.MAGENTA}[loop] -> END OF DAY CLOSE {current_side.upper()}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
+                close_position(symbol)
+                await asyncio.sleep(settings.LOOP_INTERVAL_SECONDS)
+                continue
+
             # Two-sided trading logic with 4 thresholds
             if current_side == "long":
                 # We have a LONG position - check for exit
                 if score < long_exit:
                     pnl = calc_pnl("long")
-                    await write_trade_close(open_trade_id, current_price, pnl, now)
+                    await write_trade_close(open_trade_id, current_price, pnl, now, close_reason="signal")
                     open_trade_id = None
                     print(f"{Fore.YELLOW}[loop] -> CLOSE LONG  score={score:+.3f} < {long_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
                     close_position(symbol)
@@ -221,7 +248,7 @@ async def run_intraday_loop():
                 # We have a SHORT position - check for exit
                 if score > short_exit:
                     pnl = calc_pnl("short")
-                    await write_trade_close(open_trade_id, current_price, pnl, now)
+                    await write_trade_close(open_trade_id, current_price, pnl, now, close_reason="signal")
                     open_trade_id = None
                     print(f"{Fore.YELLOW}[loop] -> CLOSE SHORT  score={score:+.3f} > {short_exit:+.3f}  pnl=${pnl:+.2f}{Style.RESET_ALL}")
                     close_position(symbol)

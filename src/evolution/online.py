@@ -379,7 +379,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 total_fees += entry_fee
                 position = {"side": "long", "entry": price, "qty": qty, "idx": i}
                 if record_trades:
-                    trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
+                    trades_log.append({"action": "open", "side": "long", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
                 qty = pos_size / price
@@ -387,7 +387,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 total_fees += entry_fee
                 position = {"side": "short", "entry": price, "qty": qty, "idx": i}
                 if record_trades:
-                    trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
+                    trades_log.append({"action": "open", "side": "short", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
             exit_fee = exit_value * fee_pct
@@ -396,7 +396,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"type": "sell", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                trades_log.append({"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
             position = None
         elif position["side"] == "short" and score > long_thr:
             exit_cost = position["qty"] * price
@@ -406,7 +406,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                trades_log.append({"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
             position = None
 
         if position:

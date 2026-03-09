@@ -142,7 +142,8 @@ async def write_trade_open(
 
 
 async def write_trade_close(
-    trade_id: str, exit_price: float, pnl: float, timestamp: datetime
+    trade_id: str, exit_price: float, pnl: float, timestamp: datetime,
+    close_reason: str = "signal"  # "signal", "stop_loss", "end_of_day"
 ) -> None:
     """Update an open trade row with exit info."""
     from sqlalchemy import update
@@ -151,7 +152,12 @@ async def write_trade_close(
         await db.execute(
             update(TradeModel)
             .where(TradeModel.id == trade_id)
-            .values(exit_price=round(exit_price, 8), pnl=round(pnl, 8), closed_at=timestamp)
+            .values(
+                exit_price=round(exit_price, 8),
+                pnl=round(pnl, 8),
+                closed_at=timestamp,
+                close_reason=close_reason
+            )
         )
         await db.commit()
 

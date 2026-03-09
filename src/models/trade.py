@@ -21,6 +21,7 @@ class Trade(Base):
     score: Mapped[float | None] = mapped_column(Numeric(10, 6))
     opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    close_reason: Mapped[str | None] = mapped_column(String(20))  # "signal", "stop_loss", "end_of_day"
     alpaca_order_id: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
