@@ -7,6 +7,7 @@ Usage:
   python scripts/evolve_online.py --mutations 20 --sigma 0.08
 """
 import argparse
+import json
 import os
 import sys
 import time
@@ -16,9 +17,32 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from colorama import Fore, Style, init as colorama_init
 from src.config import settings
-from src.evolution.online import evolve_once
+from src.evolution.online import evolve_once, _db_url
 
 colorama_init(autoreset=True)
+
+
+def check_and_clear_trigger() -> bool:
+    """Check if evolution was triggered from frontend and clear the flag."""
+    import psycopg
+    try:
+        with psycopg.connect(_db_url()) as conn:
+            row = conn.execute(
+                "SELECT value FROM bot_cache WHERE key = 'evolution_trigger'"
+            ).fetchone()
+            if row and row[0]:
+                val = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                if val.get("requested"):
+                    # Clear the trigger
+                    conn.execute(
+                        "UPDATE bot_cache SET value = '{\"requested\": false}'::jsonb WHERE key = 'evolution_trigger'"
+                    )
+                    conn.commit()
+                    print(f"{Fore.YELLOW}[trigger] Evolution triggered from frontend!{Style.RESET_ALL}")
+                    return True
+    except Exception as e:
+        print(f"{Fore.RED}[trigger] Check failed: {e}{Style.RESET_ALL}")
+    return False
 
 
 def main():
@@ -43,9 +67,19 @@ def main():
                 evolve_once(args.symbol, args.mutations, args.sigma)
             except Exception as exc:
                 print(f"{Fore.RED}Cycle error: {exc}{Style.RESET_ALL}")
-            print(f"\n  Sleeping {args.interval}s...")
-            time.sleep(args.interval)
+
+            # Sleep with trigger check every 10 seconds
+            print(f"\n  Sleeping {args.interval}s (checking for triggers every 10s)...")
+            sleep_remaining = args.interval
+            while sleep_remaining > 0:
+                time.sleep(min(10, sleep_remaining))
+                sleep_remaining -= 10
+                if check_and_clear_trigger():
+                    print(f"{Fore.GREEN}  Waking up early due to trigger!{Style.RESET_ALL}")
+                    break
     else:
+        # Single run - also check for trigger first
+        check_and_clear_trigger()
         evolve_once(args.symbol, args.mutations, args.sigma)
 
 

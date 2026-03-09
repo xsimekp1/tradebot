@@ -85,8 +85,75 @@ export default function ResearchPage() {
         />
       </div>
 
-      {/* Evolution Progress Bar */}
-      {evolProgress?.phase && evolProgress.phase !== "idle" && (
+      {/* Evolution Log */}
+      {evolStats?.recentLog && evolStats.recentLog.length > 0 && (
+        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+          <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">
+            Evolution Log
+          </h2>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {evolStats.recentLog.map((entry: {
+              versionBefore: number;
+              versionAfter: number | null;
+              currentSharpe: number | null;
+              bestSharpe: number | null;
+              mutationsTried: number;
+              modelChanged: boolean;
+              improvement: number | null;
+              createdAt: string;
+              channelPosition: number | null;
+              channelTrend: number | null;
+              threshold: number | null;
+              entryBias: number | null;
+            }, i: number) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 p-2 rounded-lg text-xs ${
+                  entry.modelChanged
+                    ? "bg-green-500/10 border border-green-500/20"
+                    : "bg-gray-500/10 border border-gray-500/20"
+                }`}
+              >
+                <span className="text-gray-500 w-16 shrink-0">
+                  {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span className={`font-medium ${entry.modelChanged ? "text-green-400" : "text-gray-400"}`}>
+                  {entry.modelChanged
+                    ? `v${entry.versionBefore} -> v${entry.versionAfter}`
+                    : `v${entry.versionBefore} kept`}
+                </span>
+                <span className="text-gray-500">
+                  Sharpe: {entry.currentSharpe?.toFixed(2) ?? "—"}
+                  {entry.modelChanged && entry.improvement != null && (
+                    <span className="text-green-400"> (+{entry.improvement.toFixed(3)})</span>
+                  )}
+                </span>
+                {entry.channelPosition != null && (
+                  <span className="text-indigo-400">
+                    ch_pos: {(entry.channelPosition * 100).toFixed(1)}%
+                  </span>
+                )}
+                {entry.channelTrend != null && (
+                  <span className="text-cyan-400">
+                    ch_trend: {(entry.channelTrend * 100).toFixed(1)}%
+                  </span>
+                )}
+                {entry.threshold != null && (
+                  <span className="text-amber-400">
+                    thr: {entry.threshold.toFixed(3)}
+                  </span>
+                )}
+                <span className="text-gray-600 ml-auto">
+                  {entry.mutationsTried} mutations
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Evolution Progress Bar or Trigger Button */}
+      {evolProgress?.phase && evolProgress.phase !== "idle" ? (
         <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
@@ -104,6 +171,8 @@ export default function ResearchPage() {
           </div>
           <p className="text-xs text-gray-500 mt-2">{evolProgress.message || "Working..."}</p>
         </div>
+      ) : (
+        <TriggerEvolutionButton />
       )}
 
       {/* Live score + active model side by side */}
@@ -264,6 +333,55 @@ function ForceWeightsButton() {
       >
         Reset All
       </button>
+    </div>
+  );
+}
+
+function TriggerEvolutionButton() {
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState<string | null>(null);
+
+  const handleTrigger = async () => {
+    if (!confirm("Spustit novou evoluci modelu?\n\nToto spusti mutacni cyklus a porovnani s aktualnim modelem.")) {
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/trigger-evolution", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setResult("Evolution triggered!");
+        setTimeout(() => setResult(null), 3000);
+      } else {
+        setResult(`Error: ${data.error}`);
+      }
+    } catch (e) {
+      setResult(`Error: ${String(e)}`);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4 flex items-center justify-between">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Evolution Control</h2>
+        <p className="text-xs text-gray-600 mt-0.5">No evolution running. Trigger manually or wait for scheduler.</p>
+      </div>
+      <div className="flex items-center gap-3">
+        {result && (
+          <span className={`text-xs ${result.startsWith("Error") ? "text-red-400" : "text-green-400"}`}>
+            {result}
+          </span>
+        )}
+        <button
+          onClick={handleTrigger}
+          disabled={loading}
+          className="text-sm px-4 py-2 rounded-lg border border-indigo-500/50 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50 font-medium"
+        >
+          {loading ? "Starting..." : "Run Evolution"}
+        </button>
+      </div>
     </div>
   );
 }

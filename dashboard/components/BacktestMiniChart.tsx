@@ -79,14 +79,24 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
   const finalEq = equityCurve[equityCurve.length - 1].eq;
   const isPositive = finalEq >= capital;
 
-  // Map trade timestamps to equity curve indices
-  const tsToEq = new Map(equityCurve.map(p => [p.ts.slice(0, 16), p.eq]));
+  // Map trade timestamps to equity curve - find nearest point
+  const eqTimes = equityCurve.map(p => new Date(p.ts).getTime());
   const tradeMarkers = trades
     .map(t => {
-      const key = t.ts.slice(0, 16);
-      const eq = tsToEq.get(key);
-      if (eq === undefined) return null;
-      return { ...t, eq };
+      const tradeTime = new Date(t.ts).getTime();
+      // Find closest equity curve point
+      let closestIdx = 0;
+      let closestDiff = Math.abs(eqTimes[0] - tradeTime);
+      for (let i = 1; i < eqTimes.length; i++) {
+        const diff = Math.abs(eqTimes[i] - tradeTime);
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestIdx = i;
+        }
+      }
+      // Only include if within 30 minutes of a point
+      if (closestDiff > 30 * 60 * 1000) return null;
+      return { ...t, ts: equityCurve[closestIdx].ts, eq: equityCurve[closestIdx].eq };
     })
     .filter(Boolean) as (TradeEvent & { eq: number })[];
 
