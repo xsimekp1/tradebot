@@ -16,7 +16,11 @@
       "Bash(git stash pop:*)",
       "Bash(npm run build:*)",
       "Bash(powershell -Command \"npm run build 2>&1 | Select-Object -First 80\")",
-      "WebSearch"
+      "WebSearch",
+      "Bash(railway variables:*)",
+      "Bash(powershell -Command \"railway variables --service tradebot 2>&1\")",
+      "WebFetch(domain:developer.oanda.com)",
+      "Bash(git restore:*)"
     ]
   }
 }

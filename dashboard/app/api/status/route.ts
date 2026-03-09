@@ -42,6 +42,15 @@ export async function GET() {
       WHERE timestamp = (SELECT MAX(timestamp) FROM trading_signals)
     `;
 
+    // Get current weights and thresholds
+    const [weightsRow] = await sql`
+      SELECT weights, performance FROM signal_weights WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1
+    `;
+    const weights = weightsRow?.weights ?? null;
+    const performance = weightsRow?.performance ?? {};
+    const threshold = performance?.threshold ?? 0.15;
+    const entryBias = performance?.entry_bias ?? 0.03;
+
     // Current open position
     const [openPos] = await sql`
       SELECT side, entry_price, score FROM trades WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1
@@ -65,6 +74,9 @@ export async function GET() {
       totalPnl: Number(totalPnlRow?.total_pnl ?? 0),
       currentScore: scoreRow?.score != null ? Number(scoreRow.score) : null,
       signalValues: scoreRow?.signal_values ?? null,
+      weights,
+      threshold,
+      entryBias,
       openPosition: openPos ? { side: openPos.side, entryPrice: Number(openPos.entry_price) } : null,
       channelInfo: getChannelInfo(),
     });

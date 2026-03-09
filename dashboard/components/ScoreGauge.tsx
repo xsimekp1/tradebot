@@ -1,13 +1,12 @@
 "use client";
 
-const LONG_THR = 0.15;
-const SHORT_THR = -0.15;
-
 type Props = {
   score: number | null;
   openPosition: { side: string; entryPrice: number } | null;
   signalValues: Record<string, number> | null;
   weights: Record<string, number> | null;
+  threshold?: number;
+  entryBias?: number;
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -22,14 +21,22 @@ const SIGNAL_COLORS: Record<string, string> = {
   channel_slope: "#a855f7",
 };
 
-export function ScoreGauge({ score, openPosition, signalValues, weights }: Props) {
+export function ScoreGauge({ score, openPosition, signalValues, weights, threshold = 0.15, entryBias = 0.03 }: Props) {
   const noData = score === null;
   const s = score ?? 0;
+
+  // Thresholds
+  const LONG_THR = threshold;
+  const SHORT_THR = -threshold;
+  const ENTRY_LONG_THR = threshold + entryBias;
+  const ENTRY_SHORT_THR = -(threshold + entryBias);
 
   // Position of needle as % along the -1…+1 bar
   const needlePct = ((s + 1) / 2) * 100;
   const longThrPct = ((LONG_THR + 1) / 2) * 100;
   const shortThrPct = ((SHORT_THR + 1) / 2) * 100;
+  const entryLongPct = ((ENTRY_LONG_THR + 1) / 2) * 100;
+  const entryShortPct = ((ENTRY_SHORT_THR + 1) / 2) * 100;
 
   // Distance to nearest threshold
   let distLabel = "";
@@ -78,25 +85,35 @@ export function ScoreGauge({ score, openPosition, signalValues, weights }: Props
 
       {/* Gauge bar */}
       <div className="relative h-6 rounded-full bg-[#2a2d3a] overflow-hidden">
-        {/* Short zone */}
+        {/* Short zone (entry) */}
         <div
           className="absolute top-0 bottom-0 left-0"
-          style={{ width: `${shortThrPct}%`, background: "rgba(244,63,94,0.15)" }}
+          style={{ width: `${entryShortPct}%`, background: "rgba(244,63,94,0.15)" }}
         />
-        {/* Long zone */}
+        {/* Long zone (entry) */}
         <div
           className="absolute top-0 bottom-0 right-0"
-          style={{ width: `${100 - longThrPct}%`, background: "rgba(16,185,129,0.15)" }}
+          style={{ width: `${100 - entryLongPct}%`, background: "rgba(16,185,129,0.15)" }}
         />
-        {/* Short threshold marker */}
+        {/* Entry short threshold marker (cyan dashed) */}
+        <div
+          className="absolute top-0 bottom-0 w-px bg-cyan-400/60"
+          style={{ left: `${entryShortPct}%`, borderLeft: "1px dashed" }}
+        />
+        {/* Short threshold marker (exit) */}
         <div
           className="absolute top-0 bottom-0 w-px bg-red-500/50"
           style={{ left: `${shortThrPct}%` }}
         />
-        {/* Long threshold marker */}
+        {/* Long threshold marker (exit) */}
         <div
           className="absolute top-0 bottom-0 w-px bg-green-500/50"
           style={{ left: `${longThrPct}%` }}
+        />
+        {/* Entry long threshold marker (cyan dashed) */}
+        <div
+          className="absolute top-0 bottom-0 w-px bg-cyan-400/60"
+          style={{ left: `${entryLongPct}%`, borderLeft: "1px dashed" }}
         />
         {/* Center marker */}
         <div
@@ -115,11 +132,19 @@ export function ScoreGauge({ score, openPosition, signalValues, weights }: Props
       {/* Labels */}
       <div className="flex justify-between text-xs text-gray-600">
         <span>SHORT −1.0</span>
-        <span className="text-red-500/60">−{Math.abs(SHORT_THR)}</span>
+        <span className="text-red-500/60">−{LONG_THR.toFixed(2)}</span>
         <span>0</span>
-        <span className="text-green-500/60">+{LONG_THR}</span>
+        <span className="text-green-500/60">+{LONG_THR.toFixed(2)}</span>
         <span>LONG +1.0</span>
       </div>
+
+      {/* Entry bias info */}
+      {entryBias > 0 && (
+        <div className="text-xs text-cyan-400/70 flex items-center gap-2">
+          <span className="w-3 h-px bg-cyan-400/60" style={{ borderTop: "1px dashed" }} />
+          <span>Entry threshold: ±{ENTRY_LONG_THR.toFixed(3)} (bias +{entryBias.toFixed(3)})</span>
+        </div>
+      )}
 
       {/* Open position */}
       {openPosition && (

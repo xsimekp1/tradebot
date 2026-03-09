@@ -240,6 +240,7 @@ class ChannelPositionSignal(BaseSignal):
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
         current_price = prices[-1]
         price_min, price_max = prices.min(), prices.max()
+        price_range = price_max - price_min
 
         # Find lines with warm-start
         r_slope, r_intercept, _ = find_optimal_resistance_line(
@@ -249,22 +250,39 @@ class ChannelPositionSignal(BaseSignal):
             prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
         )
 
-        # Cache for next call
-        self._prev_r_slope = r_slope
-        self._prev_r_intercept = r_intercept
-        self._prev_s_slope = s_slope
-        self._prev_s_intercept = s_intercept
-
         # Extrapolate lines to current bar (last index in window)
         n = len(prices) - 1
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
 
-        # Periodic logging (every 100 calls = ~1.5 hours with 1-min bars)
-        ChannelPositionSignal._log_counter += 1
-        if ChannelPositionSignal._log_counter % 100 == 1:
-            print(f"[channel] price={current_price:.2f} sup={support_price:.2f} res={resistance_price:.2f} "
-                  f"width={channel_width:.2f} pos={position*100:.0f}%")
+        # SANITY CHECK: lines must be within reasonable bounds of price data
+        # If not, clear cache and use simple fallbacks
+        max_deviation = price_range * 2.0  # Allow up to 2x price range deviation
+        r_sane = abs(resistance_price - price_max) < max_deviation
+        s_sane = abs(support_price - price_min) < max_deviation
+
+        if not r_sane or not s_sane:
+            # Reset cache - something went wrong
+            self._prev_r_slope = None
+            self._prev_r_intercept = None
+            self._prev_s_slope = None
+            self._prev_s_intercept = None
+            # Use simple fallbacks
+            resistance_price = price_max + price_range * 0.05 if not r_sane else resistance_price
+            support_price = price_min - price_range * 0.05 if not s_sane else support_price
+            # Recompute with no warm-start
+            if not r_sane:
+                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+                resistance_price = r_intercept + r_slope * n
+            if not s_sane:
+                s_slope, s_intercept, _ = find_optimal_support_line(prices)
+                support_price = s_intercept + s_slope * n
+
+        # Cache for next call (only if sane)
+        self._prev_r_slope = r_slope
+        self._prev_r_intercept = r_intercept
+        self._prev_s_slope = s_slope
+        self._prev_s_intercept = s_intercept
 
         # Channel width
         channel_width = resistance_price - support_price
@@ -274,6 +292,13 @@ class ChannelPositionSignal(BaseSignal):
 
         # Position in channel: 0 = at support, 1 = at resistance
         position = (current_price - support_price) / channel_width
+
+        # Periodic logging (every 100 calls = ~1.5 hours with 1-min bars)
+        ChannelPositionSignal._log_counter += 1
+        if ChannelPositionSignal._log_counter % 100 == 1:
+            print(f"[channel] price={current_price:.2f} sup={support_price:.2f} res={resistance_price:.2f} "
+                  f"width={channel_width:.2f} pos={position*100:.0f}%")
+
         # If price is outside channel bounds, signal is unreliable — return neutral
         if position < 0.0 or position > 1.0:
             self.last_channel_info = None
@@ -339,6 +364,8 @@ class ChannelSlopeSignal(BaseSignal):
 
         prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
         current_price = prices[-1]
+        price_min, price_max = prices.min(), prices.max()
+        price_range = price_max - price_min
 
         r_slope, r_intercept, _ = find_optimal_resistance_line(
             prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
@@ -346,6 +373,27 @@ class ChannelSlopeSignal(BaseSignal):
         s_slope, s_intercept, _ = find_optimal_support_line(
             prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
         )
+
+        # Extrapolate lines to current bar for sanity check
+        n = len(prices) - 1
+        resistance_price = r_intercept + r_slope * n
+        support_price = s_intercept + s_slope * n
+
+        # SANITY CHECK: lines must be within reasonable bounds
+        max_deviation = price_range * 2.0
+        r_sane = abs(resistance_price - price_max) < max_deviation
+        s_sane = abs(support_price - price_min) < max_deviation
+
+        if not r_sane or not s_sane:
+            # Reset cache and recompute
+            self._prev_r_slope = None
+            self._prev_r_intercept = None
+            self._prev_s_slope = None
+            self._prev_s_intercept = None
+            if not r_sane:
+                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+            if not s_sane:
+                s_slope, s_intercept, _ = find_optimal_support_line(prices)
 
         # Cache for next call
         self._prev_r_slope = r_slope

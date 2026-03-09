@@ -98,7 +98,9 @@ export default function Dashboard() {
               score={status?.currentScore ?? null}
               openPosition={status?.openPosition ?? null}
               signalValues={status?.signalValues ?? null}
-              weights={activeWeights?.weights ?? null}
+              weights={status?.weights ?? activeWeights?.weights ?? null}
+              threshold={status?.threshold}
+              entryBias={status?.entryBias}
             />
           </div>
 
