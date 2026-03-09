@@ -275,10 +275,13 @@ class ChannelPositionSignal(BaseSignal):
         price_min, price_max = prices.min(), prices.max()
         price_range = price_max - price_min
 
-        # Full grid search every time for consistency (no warm-start)
-        # This ensures identical results in live trading and backtesting
-        r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
-        s_slope, s_intercept, _ = find_optimal_support_line(prices)
+        # Find lines with warm-start
+        r_slope, r_intercept, _ = find_optimal_resistance_line(
+            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+        )
+        s_slope, s_intercept, _ = find_optimal_support_line(
+            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+        )
 
         # Extrapolate lines to current bar (last index in window)
         n = len(prices) - 1
@@ -398,11 +401,14 @@ class ChannelSlopeSignal(BaseSignal):
         price_min, price_max = prices.min(), prices.max()
         price_range = price_max - price_min
 
-        # Full grid search for consistency
-        r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
-        s_slope, s_intercept, _ = find_optimal_support_line(prices)
+        r_slope, r_intercept, _ = find_optimal_resistance_line(
+            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+        )
+        s_slope, s_intercept, _ = find_optimal_support_line(
+            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+        )
 
-        # Extrapolate lines to current bar
+        # Extrapolate lines to current bar for sanity check
         n = len(prices) - 1
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
@@ -413,7 +419,11 @@ class ChannelSlopeSignal(BaseSignal):
         s_sane = abs(support_price - price_min) < max_deviation
 
         if not r_sane or not s_sane:
-            # Recompute with fallback
+            # Reset cache and recompute
+            self._prev_r_slope = None
+            self._prev_r_intercept = None
+            self._prev_s_slope = None
+            self._prev_s_intercept = None
             if not r_sane:
                 r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
             if not s_sane:
@@ -460,9 +470,38 @@ class ChannelTrendSignal(BaseSignal):
         price_min, price_max = prices.min(), prices.max()
         price_range = price_max - price_min
 
-        # Full grid search for consistency
-        r_slope, _, _ = find_optimal_resistance_line(prices)
-        s_slope, _, _ = find_optimal_support_line(prices)
+        r_slope, r_intercept, _ = find_optimal_resistance_line(
+            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+        )
+        s_slope, s_intercept, _ = find_optimal_support_line(
+            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+        )
+
+        # Extrapolate lines to current bar for sanity check
+        n = len(prices) - 1
+        resistance_price = r_intercept + r_slope * n
+        support_price = s_intercept + s_slope * n
+
+        # SANITY CHECK: lines must be within reasonable bounds
+        max_deviation = price_range * 2.0
+        r_sane = abs(resistance_price - price_max) < max_deviation
+        s_sane = abs(support_price - price_min) < max_deviation
+
+        if not r_sane or not s_sane:
+            self._prev_r_slope = None
+            self._prev_r_intercept = None
+            self._prev_s_slope = None
+            self._prev_s_intercept = None
+            if not r_sane:
+                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+            if not s_sane:
+                s_slope, s_intercept, _ = find_optimal_support_line(prices)
+
+        # Cache for next call
+        self._prev_r_slope = r_slope
+        self._prev_r_intercept = r_intercept
+        self._prev_s_slope = s_slope
+        self._prev_s_intercept = s_intercept
 
         # Binary trend signal: both rising = +1, both falling = -1, mixed = 0
         if r_slope > 0 and s_slope > 0:
