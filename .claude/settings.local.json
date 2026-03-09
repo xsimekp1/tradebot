@@ -37,7 +37,8 @@
       "Bash(kill:*)",
       "Bash(echo:*)",
       "Bash(done)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(RAILWAY_MODE=evolve python:*)"
     ]
   }
 }

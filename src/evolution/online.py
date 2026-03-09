@@ -587,7 +587,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     )
 
     print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, thr={best_thr:.3f}, bias={best_bias:.3f}):{Style.RESET_ALL}")
-    print(f"  {'Signal':<12} {'Old':>7} {'New':>7} {'Δ':>7}")
+    print(f"  {'Signal':<12} {'Old':>7} {'New':>7} {'Diff':>7}")
     print(f"  {'-'*12} {'-'*7} {'-'*7} {'-'*7}")
     for name in sorted(best["weights"], key=best["weights"].get, reverse=True):
         old_v = current_weights.get(name, 0.0)
