@@ -30,43 +30,29 @@ export async function POST() {
       LIMIT 1
     `;
 
-    if (!current) {
-      // No active model - create the first one with target weights
-      const [inserted] = await sql`
-        INSERT INTO signal_weights (version, weights, performance, is_active)
-        VALUES (1, ${JSON.stringify(TARGET_WEIGHTS)}::jsonb, ${JSON.stringify({ source: "force-weights-init" })}::jsonb, TRUE)
-        RETURNING version
-      `;
+    const oldWeights = current?.weights as Record<string, number> | null;
+    const oldVersion = (current?.version as number) ?? 0;
 
-      return NextResponse.json({
-        success: true,
-        version: inserted.version,
-        oldWeights: null,
-        newWeights: TARGET_WEIGHTS,
-        created: true,
-      });
-    }
+    // Deactivate all existing weights
+    await sql`UPDATE signal_weights SET is_active = FALSE WHERE is_active = TRUE`;
 
-    const oldWeights = current.weights as Record<string, number>;
-    const version = current.version as number;
-
-    // Update weights
+    // Create fresh new version with clean target weights
+    const newVersion = oldVersion + 1;
     await sql`
-      UPDATE signal_weights
-      SET weights = ${JSON.stringify(TARGET_WEIGHTS)}::jsonb
-      WHERE id = ${current.id}
+      INSERT INTO signal_weights (version, weights, performance, is_active)
+      VALUES (
+        ${newVersion},
+        ${JSON.stringify(TARGET_WEIGHTS)}::jsonb,
+        ${JSON.stringify({ source: "force-weights", previous_version: oldVersion })}::jsonb,
+        TRUE
+      )
     `;
 
     return NextResponse.json({
       success: true,
-      version,
-      oldWeights,
+      version: newVersion,
+      oldVersion,
       newWeights: TARGET_WEIGHTS,
-      changes: Object.keys(TARGET_WEIGHTS).map(k => ({
-        signal: k,
-        old: oldWeights[k] ?? 0,
-        new: TARGET_WEIGHTS[k as keyof typeof TARGET_WEIGHTS],
-      })),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
