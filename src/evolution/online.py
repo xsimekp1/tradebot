@@ -139,6 +139,22 @@ def save_weights(weights: dict, version: int, performance: dict, threshold: floa
     print(f"  {Fore.GREEN}[saved v{version} to DB  threshold={threshold:.3f}]{Style.RESET_ALL}")
 
 
+def update_performance(version: int, performance: dict) -> None:
+    """Update performance metrics of the active model (without changing weights/version)."""
+    import psycopg
+    with psycopg.connect(_db_url()) as conn:
+        conn.execute(
+            """
+            UPDATE signal_weights
+            SET performance = %s::jsonb
+            WHERE version = %s AND is_active = TRUE
+            """,
+            (json.dumps(performance), version),
+        )
+        conn.commit()
+    print(f"  {Fore.CYAN}[updated v{version} performance metrics]{Style.RESET_ALL}")
+
+
 # ── Data ──────────────────────────────────────────────────────────────────────
 
 def fetch_bars(symbol: str):
@@ -439,7 +455,19 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     evolution_duration = time.time() - evolution_start
 
     if best["label"] == "current":
-        print(f"\n  {Fore.YELLOW}Current strategy is best — no update.{Style.RESET_ALL}")
+        print(f"\n  {Fore.YELLOW}Current strategy is best — keeping v{version}.{Style.RESET_ALL}")
+        # Update performance metrics with current test results (includes fees now)
+        is_stats = simulate(df_train, mat_train, current_arr, current_threshold, -current_threshold, entry_bias=current_entry_bias)
+        oos_full = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias)
+        update_performance(version, {
+            "in_sample": is_stats,
+            "out_of_sample": oos_full,
+            "threshold": current_threshold,
+            "entry_bias": current_entry_bias,
+            "evolution_duration_sec": round(evolution_duration, 1),
+            "signal_computation_sec": round(signal_duration, 1),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
         print(f"  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")
         log_evolution_result(
             symbol=symbol,
