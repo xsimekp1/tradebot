@@ -19,54 +19,52 @@ const SIGNAL_COLORS: Record<string, string> = {
   breakout: "#f43f5e",
   channel_position: "#ec4899",
   channel_slope: "#a855f7",
-  channel_trend: "#14b8a6",  // teal - rising/falling channel
+  channel_trend: "#14b8a6",
 };
 
 export function ScoreGauge({ score, openPosition, signalValues, weights, threshold = 0.15, entryBias = 0.03 }: Props) {
   const noData = score === null;
   const s = score ?? 0;
 
-  // Thresholds
-  const LONG_THR = threshold;
-  const SHORT_THR = -threshold;
-  const ENTRY_LONG_THR = threshold + entryBias;
-  const ENTRY_SHORT_THR = -(threshold + entryBias);
+  // LONG-ONLY thresholds
+  const EXIT_THR = threshold;             // Exit when score drops below this
+  const ENTRY_THR = threshold + entryBias; // Enter when score rises above this
 
-  // Position of needle as % along the -1…+1 bar
-  const needlePct = ((s + 1) / 2) * 100;
-  const longThrPct = ((LONG_THR + 1) / 2) * 100;
-  const shortThrPct = ((SHORT_THR + 1) / 2) * 100;
-  const entryLongPct = ((ENTRY_LONG_THR + 1) / 2) * 100;
-  const entryShortPct = ((ENTRY_SHORT_THR + 1) / 2) * 100;
+  // Position of elements as % along the 0…+1 bar (we only show positive half)
+  // Map 0 → 0%, +1 → 100%
+  const needlePct = Math.max(0, Math.min(100, s * 100));
+  const exitThrPct = EXIT_THR * 100;
+  const entryThrPct = ENTRY_THR * 100;
 
-  // Distance to nearest threshold
-  let distLabel = "";
-  let distPct = 0;
-  let direction = "";
+  // Status
+  let status = "";
+  let statusColor = "#9ca3af";
   if (!noData) {
-    if (s >= LONG_THR) {
-      direction = "LONG active";
-      distLabel = `Score above LONG threshold`;
-      distPct = 100;
-    } else if (s <= SHORT_THR) {
-      direction = "SHORT active";
-      distLabel = `Score below SHORT threshold`;
-      distPct = 100;
-    } else if (s >= 0) {
-      distPct = (s / LONG_THR) * 100;
-      distLabel = `${distPct.toFixed(0)}% toward LONG`;
-      direction = "neutral";
+    if (openPosition) {
+      // We have a position - are we above exit threshold?
+      if (s >= EXIT_THR) {
+        status = "HOLDING (above exit)";
+        statusColor = "#10b981";
+      } else {
+        status = "EXIT SIGNAL (below exit threshold)";
+        statusColor = "#f59e0b";
+      }
     } else {
-      distPct = (Math.abs(s) / Math.abs(SHORT_THR)) * 100;
-      distLabel = `${distPct.toFixed(0)}% toward SHORT`;
-      direction = "neutral";
+      // No position - are we above entry threshold?
+      if (s >= ENTRY_THR) {
+        status = "BUY SIGNAL (above entry)";
+        statusColor = "#10b981";
+      } else if (s >= EXIT_THR) {
+        status = "Neutral (in hysteresis zone)";
+        statusColor = "#6ee7b7";
+      } else {
+        status = "Neutral (below thresholds)";
+        statusColor = "#9ca3af";
+      }
     }
   }
 
-  const scoreColor =
-    s >= LONG_THR ? "#10b981" :
-    s <= SHORT_THR ? "#f43f5e" :
-    s > 0 ? "#6ee7b7" : s < 0 ? "#fca5a5" : "#9ca3af";
+  const scoreColor = s >= ENTRY_THR ? "#10b981" : s >= EXIT_THR ? "#6ee7b7" : s >= 0 ? "#9ca3af" : "#fca5a5";
 
   return (
     <div className="space-y-4">
@@ -78,93 +76,82 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
         >
           {noData ? "—" : (s >= 0 ? "+" : "") + s.toFixed(3)}
         </span>
-        <div className="text-xs text-gray-500 leading-tight">
-          <div>composite score</div>
-          {!noData && <div style={{ color: scoreColor }}>{distLabel}</div>}
+        <div className="text-xs leading-tight">
+          <div className="text-gray-500">composite score</div>
+          {!noData && <div style={{ color: statusColor }}>{status}</div>}
         </div>
       </div>
 
-      {/* Gauge bar */}
-      <div className="relative h-6 rounded-full bg-[#2a2d3a] overflow-hidden">
-        {/* Short zone (entry) */}
-        <div
-          className="absolute top-0 bottom-0 left-0"
-          style={{ width: `${entryShortPct}%`, background: "rgba(244,63,94,0.15)" }}
-        />
-        {/* Long zone (entry) */}
+      {/* Gauge bar - only positive side (0 to +1) */}
+      <div className="relative h-8 rounded-full bg-[#2a2d3a] overflow-hidden">
+        {/* Entry zone (green) - everything above entry threshold */}
         <div
           className="absolute top-0 bottom-0 right-0"
-          style={{ width: `${100 - entryLongPct}%`, background: "rgba(16,185,129,0.15)" }}
+          style={{ width: `${100 - entryThrPct}%`, background: "rgba(16,185,129,0.2)" }}
         />
-        {/* Entry short threshold marker (cyan dashed) */}
+        {/* Hysteresis zone (yellow-ish) - between exit and entry */}
         <div
-          className="absolute top-0 bottom-0 w-px bg-cyan-400/60"
-          style={{ left: `${entryShortPct}%`, borderLeft: "1px dashed" }}
+          className="absolute top-0 bottom-0"
+          style={{
+            left: `${exitThrPct}%`,
+            width: `${entryThrPct - exitThrPct}%`,
+            background: "rgba(251,191,36,0.1)"
+          }}
         />
-        {/* Short threshold marker (exit) */}
+
+        {/* Exit threshold marker */}
         <div
-          className="absolute top-0 bottom-0 w-px bg-red-500/50"
-          style={{ left: `${shortThrPct}%` }}
+          className="absolute top-0 bottom-0 w-0.5 bg-amber-500/70"
+          style={{ left: `${exitThrPct}%` }}
         />
-        {/* Long threshold marker (exit) */}
+        {/* Entry threshold marker */}
         <div
-          className="absolute top-0 bottom-0 w-px bg-green-500/50"
-          style={{ left: `${longThrPct}%` }}
+          className="absolute top-0 bottom-0 w-0.5 bg-green-500/70"
+          style={{ left: `${entryThrPct}%` }}
         />
-        {/* Entry long threshold marker (cyan dashed) */}
-        <div
-          className="absolute top-0 bottom-0 w-px bg-cyan-400/60"
-          style={{ left: `${entryLongPct}%`, borderLeft: "1px dashed" }}
-        />
-        {/* Center marker */}
-        <div
-          className="absolute top-1 bottom-1 w-px bg-gray-600"
-          style={{ left: "50%" }}
-        />
+
         {/* Needle */}
         {!noData && (
           <div
-            className="absolute top-1 bottom-1 w-1.5 rounded-full shadow-lg transition-all duration-700"
-            style={{ left: `calc(${needlePct}% - 3px)`, backgroundColor: scoreColor }}
+            className="absolute top-1 bottom-1 w-2 rounded-full shadow-lg transition-all duration-700"
+            style={{
+              left: `calc(${needlePct}% - 4px)`,
+              backgroundColor: scoreColor,
+              boxShadow: `0 0 8px ${scoreColor}50`
+            }}
           />
         )}
       </div>
 
-      {/* Labels - two rows: exit thresholds and entry thresholds */}
-      <div className="space-y-0.5 text-xs">
-        <div className="flex justify-between text-gray-600">
-          <span>SHORT −1.0</span>
-          <span className="text-red-500/60">exit −{LONG_THR.toFixed(2)}</span>
-          <span>0</span>
-          <span className="text-green-500/60">exit +{LONG_THR.toFixed(2)}</span>
-          <span>LONG +1.0</span>
-        </div>
-        {entryBias > 0 && (
-          <div className="flex justify-between text-cyan-400/50">
-            <span></span>
-            <span>entry −{ENTRY_LONG_THR.toFixed(2)}</span>
-            <span className="text-gray-700">bias ±{entryBias.toFixed(2)}</span>
-            <span>entry +{ENTRY_LONG_THR.toFixed(2)}</span>
-            <span></span>
-          </div>
-        )}
+      {/* Labels - simple */}
+      <div className="flex justify-between text-xs px-1">
+        <span className="text-gray-600">0</span>
+        <span className="text-amber-500">
+          exit {EXIT_THR.toFixed(2)}
+        </span>
+        <span className="text-green-500">
+          entry {ENTRY_THR.toFixed(2)}
+        </span>
+        <span className="text-gray-600">+1.0</span>
       </div>
+
+      {/* Bias info */}
+      {entryBias > 0 && (
+        <div className="text-[10px] text-gray-600 text-center">
+          hysteresis: entry − exit = {entryBias.toFixed(3)} (prevents rapid switching)
+        </div>
+      )}
 
       {/* Open position */}
       {openPosition && (
-        <div className={`text-xs px-3 py-2 rounded-lg font-medium ${
-          openPosition.side === "long"
-            ? "bg-green-500/10 text-green-400 border border-green-500/20"
-            : "bg-red-500/10 text-red-400 border border-red-500/20"
-        }`}>
-          Open {openPosition.side.toUpperCase()} @ ${Number(openPosition.entryPrice).toLocaleString("en", { minimumFractionDigits: 2 })}
+        <div className="text-xs px-3 py-2 rounded-lg font-medium bg-green-500/10 text-green-400 border border-green-500/20">
+          Open LONG @ ${Number(openPosition.entryPrice).toLocaleString("en", { minimumFractionDigits: 2 })}
         </div>
       )}
 
       {/* Per-signal breakdown */}
       {signalValues && (
         <div className="space-y-0.5 pt-1">
-          {/* Header */}
           <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 text-[10px] text-gray-600 uppercase tracking-wide px-2 pb-1">
             <span>Signal</span>
             <span className="text-right">raw</span>
