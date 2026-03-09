@@ -197,9 +197,11 @@ def compute_signal_matrix(df, label: str = "") -> np.ndarray:
     matrix = np.zeros((n, len(signals)), dtype=np.float32)
     total = n - LOOKBACK
     tag = f"{label}signals" if label else "signals"
+    # Report progress every 1000 bars or ~5% (whichever is smaller)
+    report_interval = min(1000, max(1, total // 20))
     for idx, i in enumerate(range(LOOKBACK, n)):
-        if total > 0 and idx % max(1, total // 10) == 0:
-            print(f"  {tag}: {idx * 100 // total}%")
+        if total > 0 and idx % report_interval == 0:
+            print(f"  {tag}: {idx * 100 // total}% ({idx}/{total} bars)")
         window = df.iloc[i - LOOKBACK: i + 1]
         for j, sig in enumerate(signals):
             matrix[i, j] = sig.safe_compute(window)
