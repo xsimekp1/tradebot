@@ -75,33 +75,40 @@ def find_optimal_resistance_line(
         # Adjust for 1-bar window shift
         current_slope = prev_slope
         current_intercept = prev_intercept + prev_slope
-    else:
-        # Start with line through max price, slight trend based on recent vs old prices
+        # Verify: if line is now BELOW max price, we need fresh start
+        line_at_max = current_intercept + current_slope * max_idx
+        if line_at_max < max_price:
+            prev_slope = None  # Force fresh initialization below
+
+    if prev_slope is None:
+        # Start with line ABOVE max price (resistance must be above all prices)
         recent_avg = float(np.mean(prices[-n//4:]))
         old_avg = float(np.mean(prices[:n//4]))
         trend_slope = (recent_avg - old_avg) / (n * 0.75)
         current_slope = trend_slope
-        # Line passes through max price point
-        current_intercept = max_price - current_slope * max_idx
+        # Line passes ABOVE max price by 1% of price range
+        current_intercept = (max_price + price_range * 0.01) - current_slope * max_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
     best_intercept = current_intercept
 
     # Multi-scale optimization: coarse → fine
+    # Larger ranges to ensure we find the global optimum
     scales = [
-        (price_range * 0.03, price_range / n * 0.3),   # Coarse: 3% shift, large rotation
-        (price_range * 0.01, price_range / n * 0.1),   # Medium: 1% shift
+        (price_range * 0.05, price_range / n * 0.5),   # Very coarse: 5% shift
+        (price_range * 0.02, price_range / n * 0.2),   # Coarse: 2% shift
+        (price_range * 0.008, price_range / n * 0.08), # Medium: 0.8% shift
         (price_range * 0.003, price_range / n * 0.03), # Fine: 0.3% shift
     ]
 
     for shift_step, rotate_step in scales:
         # Run multiple iterations at each scale
-        for _ in range(4):
+        for _ in range(5):
             improved = False
 
-            # === SHIFT PHASE: try 5 positions (-2, -1, 0, +1, +2) × step ===
-            for mult in [-2, -1, 1, 2]:
+            # === SHIFT PHASE: try multiple positions including 0 ===
+            for mult in [-3, -2, -1, 0, 1, 2, 3]:
                 test_intercept = current_intercept + mult * shift_step
                 score, avg_dist = evaluate(current_slope, test_intercept)
                 if score < best_score:
@@ -114,10 +121,10 @@ def find_optimal_resistance_line(
             current_slope = best_slope
             current_intercept = best_intercept
 
-            # === ROTATE PHASE: rotate around pivot, try 5 angles ===
+            # === ROTATE PHASE: rotate around pivot, try multiple angles ===
             pivot_value = current_intercept + current_slope * pivot_idx
 
-            for mult in [-2, -1, 1, 2]:
+            for mult in [-3, -2, -1, 0, 1, 2, 3]:
                 test_slope = current_slope + mult * rotate_step
                 test_intercept = pivot_value - test_slope * pivot_idx
                 score, avg_dist = evaluate(test_slope, test_intercept)
@@ -182,13 +189,19 @@ def find_optimal_support_line(
     if prev_slope is not None and prev_intercept is not None:
         current_slope = prev_slope
         current_intercept = prev_intercept + prev_slope
-    else:
-        # Start with line through min price, trend based on recent vs old
+        # Verify: if line is now ABOVE min price, we need fresh start
+        line_at_min = current_intercept + current_slope * min_idx
+        if line_at_min > min_price:
+            prev_slope = None  # Force fresh initialization below
+
+    if prev_slope is None:
+        # Start with line BELOW min price (support must be below all prices)
         recent_avg = float(np.mean(prices[-n//4:]))
         old_avg = float(np.mean(prices[:n//4]))
         trend_slope = (recent_avg - old_avg) / (n * 0.75)
         current_slope = trend_slope
-        current_intercept = min_price - current_slope * min_idx
+        # Line passes BELOW min price by 1% of price range
+        current_intercept = (min_price - price_range * 0.01) - current_slope * min_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
@@ -196,17 +209,18 @@ def find_optimal_support_line(
 
     # Multi-scale optimization: coarse → fine
     scales = [
-        (price_range * 0.03, price_range / n * 0.3),
-        (price_range * 0.01, price_range / n * 0.1),
-        (price_range * 0.003, price_range / n * 0.03),
+        (price_range * 0.05, price_range / n * 0.5),   # Very coarse
+        (price_range * 0.02, price_range / n * 0.2),   # Coarse
+        (price_range * 0.008, price_range / n * 0.08), # Medium
+        (price_range * 0.003, price_range / n * 0.03), # Fine
     ]
 
     for shift_step, rotate_step in scales:
-        for _ in range(4):
+        for _ in range(5):
             improved = False
 
             # === SHIFT PHASE ===
-            for mult in [-2, -1, 1, 2]:
+            for mult in [-3, -2, -1, 0, 1, 2, 3]:
                 test_intercept = current_intercept + mult * shift_step
                 score, avg_dist = evaluate(current_slope, test_intercept)
                 if score < best_score:
@@ -222,7 +236,7 @@ def find_optimal_support_line(
             # === ROTATE PHASE ===
             pivot_value = current_intercept + current_slope * pivot_idx
 
-            for mult in [-2, -1, 1, 2]:
+            for mult in [-3, -2, -1, 0, 1, 2, 3]:
                 test_slope = current_slope + mult * rotate_step
                 test_intercept = pivot_value - test_slope * pivot_idx
                 score, avg_dist = evaluate(test_slope, test_intercept)
@@ -286,11 +300,10 @@ class ChannelPositionSignal(BaseSignal):
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
 
-        # SANITY CHECK: lines must be within reasonable bounds of price data
-        # If not, clear cache and use simple fallbacks
-        max_deviation = price_range * 2.0  # Allow up to 2x price range deviation
-        r_sane = abs(resistance_price - price_max) < max_deviation
-        s_sane = abs(support_price - price_min) < max_deviation
+        # SANITY CHECK: resistance must be ABOVE current price, support must be BELOW
+        # If current price is outside channel, the line is wrong - reset and recompute
+        r_sane = resistance_price >= current_price * 0.998  # Allow tiny margin
+        s_sane = support_price <= current_price * 1.002
 
         if not r_sane or not s_sane:
             # Reset cache - warm-start drifted too far
