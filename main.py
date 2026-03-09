@@ -14,8 +14,8 @@ from src.config import settings
 
 MODE = os.environ.get("RAILWAY_MODE", "evolve").strip().lstrip("=")
 EVOLVE_INTERVAL = int(os.environ.get("EVOLVE_INTERVAL", "600"))   # seconds
-EVOLVE_MUTATIONS = int(os.environ.get("EVOLVE_MUTATIONS", "2"))
-EVOLVE_SIGMA = float(os.environ.get("EVOLVE_SIGMA", "0.05"))
+EVOLVE_MUTATIONS = int(os.environ.get("EVOLVE_MUTATIONS", "10"))  # More candidates for faster exploration
+EVOLVE_SIGMA = float(os.environ.get("EVOLVE_SIGMA", "0.15"))      # Larger mutations to escape local optima
 
 
 async def evolution_loop():
