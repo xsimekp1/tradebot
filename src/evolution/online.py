@@ -376,6 +376,11 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     sharpe = (daily_ret.mean() / std * (252 ** 0.5)) if std > 0 else 0.0
     pf = abs(winners.sum() / losers.sum()) if losers.sum() != 0 else 999.0
 
+    # Buy-and-hold benchmark: what if we just bought at start and held?
+    start_price = prices[LOOKBACK]
+    end_price = prices[-1]
+    buyhold_return = (end_price - start_price) / start_price * 100 if start_price > 0 else 0.0
+
     result = {
         "return_pct": round(ret, 4),
         "sharpe": round(sharpe, 4),
@@ -385,6 +390,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "max_dd": round(max_dd, 4),
         "total_fees": round(total_fees, 2),
         "entry_bias": round(entry_bias, 4),
+        "buyhold_return": round(buyhold_return, 4),
+        "beats_buyhold": ret > buyhold_return,
     }
 
     if record_trades:

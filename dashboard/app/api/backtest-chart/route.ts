@@ -34,6 +34,8 @@ export async function GET() {
         num_trades: oos.num_trades,
         win_rate: oos.win_rate,
         max_dd: oos.max_dd,
+        buyhold_return: oos.buyhold_return,
+        beats_buyhold: oos.beats_buyhold,
       },
       equityCurve: oos.equity_curve,
       trades: oos.trades_log,
