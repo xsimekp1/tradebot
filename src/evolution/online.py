@@ -157,11 +157,11 @@ def log_evolution_result(
                     symbol,
                     version_before,
                     version_after,
-                    round(current_sharpe, 6) if current_sharpe else None,
-                    round(best_sharpe, 6) if best_sharpe else None,
+                    round(float(current_sharpe), 6) if current_sharpe is not None else None,
+                    round(float(best_sharpe), 6) if best_sharpe is not None else None,
                     mutations_tried,
                     model_changed,
-                    round(improvement, 6) if improvement else None,
+                    round(float(improvement), 6) if improvement is not None else None,
                 ),
             )
             conn.commit()
