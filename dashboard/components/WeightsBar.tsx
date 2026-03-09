@@ -1,15 +1,16 @@
 "use client";
 
 const DEFAULT_WEIGHTS: Record<string, number> = {
-  momentum: 0.20,
-  rsi: 0.15,
-  bollinger: 0.12,
-  vwap: 0.12,
-  atr: 0.05,
-  volume: 0.08,
-  breakout: 0.08,
-  channel_position: 0.12,
-  channel_slope: 0.08,
+  channel_position: 0.40,  // DOMINANT - buy near support
+  channel_trend: 0.20,     // STRONG - both lines rising = bullish
+  momentum: 0.08,
+  rsi: 0.06,
+  bollinger: 0.06,
+  channel_slope: 0.06,
+  vwap: 0.04,
+  volume: 0.04,
+  breakout: 0.04,
+  atr: 0.02,
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -22,6 +23,7 @@ const SIGNAL_COLORS: Record<string, string> = {
   breakout: "#f43f5e",
   channel_position: "#ec4899",
   channel_slope: "#a855f7",
+  channel_trend: "#14b8a6",
 };
 
 export function WeightsBar({ weights }: { weights: Record<string, number> | null }) {
