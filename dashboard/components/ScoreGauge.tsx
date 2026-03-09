@@ -26,45 +26,58 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
   const noData = score === null;
   const s = score ?? 0;
 
-  // LONG-ONLY thresholds
-  const EXIT_THR = threshold;             // Exit when score drops below this
-  const ENTRY_THR = threshold + entryBias; // Enter when score rises above this
+  // Two-sided thresholds (from config)
+  const LONG_ENTRY = threshold + entryBias;   // +0.18
+  const LONG_EXIT = threshold;                 // +0.15
+  const SHORT_ENTRY = -(threshold + entryBias); // -0.18
+  const SHORT_EXIT = -threshold;               // -0.15
 
-  // Position of elements as % along the 0…+1 bar (we only show positive half)
-  // Map 0 → 0%, +1 → 100%
-  const needlePct = Math.max(0, Math.min(100, s * 100));
-  const exitThrPct = EXIT_THR * 100;
-  const entryThrPct = ENTRY_THR * 100;
+  // Map score from -1...+1 to 0%...100%
+  const needlePct = Math.max(0, Math.min(100, (s + 1) * 50));
 
-  // Status
+  // Threshold positions on -1 to +1 scale (mapped to 0-100%)
+  const longEntryPct = (LONG_ENTRY + 1) * 50;   // ~59%
+  const longExitPct = (LONG_EXIT + 1) * 50;     // ~57.5%
+  const shortEntryPct = (SHORT_ENTRY + 1) * 50; // ~41%
+  const shortExitPct = (SHORT_EXIT + 1) * 50;   // ~42.5%
+
+  // Status based on score and position
   let status = "";
   let statusColor = "#9ca3af";
   if (!noData) {
-    if (openPosition) {
-      // We have a position - are we above exit threshold?
-      if (s >= EXIT_THR) {
-        status = "HOLDING (above exit)";
+    if (openPosition?.side === "long") {
+      if (s >= LONG_EXIT) {
+        status = "HOLDING LONG";
         statusColor = "#10b981";
       } else {
-        status = "EXIT SIGNAL (below exit threshold)";
+        status = "EXIT LONG SIGNAL";
+        statusColor = "#f59e0b";
+      }
+    } else if (openPosition?.side === "short") {
+      if (s <= SHORT_EXIT) {
+        status = "HOLDING SHORT";
+        statusColor = "#ef4444";
+      } else {
+        status = "EXIT SHORT SIGNAL";
         statusColor = "#f59e0b";
       }
     } else {
-      // No position - are we above entry threshold?
-      if (s >= ENTRY_THR) {
-        status = "BUY SIGNAL (above entry)";
+      // No position
+      if (s >= LONG_ENTRY) {
+        status = "BUY SIGNAL";
         statusColor = "#10b981";
-      } else if (s >= EXIT_THR) {
-        status = "Neutral (in hysteresis zone)";
-        statusColor = "#6ee7b7";
+      } else if (s <= SHORT_ENTRY) {
+        status = "SHORT SIGNAL";
+        statusColor = "#ef4444";
       } else {
-        status = "Neutral (below thresholds)";
+        status = "Neutral";
         statusColor = "#9ca3af";
       }
     }
   }
 
-  const scoreColor = s >= ENTRY_THR ? "#10b981" : s >= EXIT_THR ? "#6ee7b7" : s >= 0 ? "#9ca3af" : "#fca5a5";
+  // Color based on score position
+  const scoreColor = s >= LONG_ENTRY ? "#10b981" : s <= SHORT_ENTRY ? "#ef4444" : "#9ca3af";
 
   return (
     <div className="space-y-4">
@@ -82,32 +95,45 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
         </div>
       </div>
 
-      {/* Gauge bar - only positive side (0 to +1) */}
+      {/* Two-sided gauge bar: -1 to +1 */}
       <div className="relative h-8 rounded-full bg-[#2a2d3a] overflow-hidden">
-        {/* Entry zone (green) - everything above entry threshold */}
+        {/* SHORT zone (left, red) - below short entry */}
+        <div
+          className="absolute top-0 bottom-0 left-0"
+          style={{ width: `${shortEntryPct}%`, background: "rgba(239,68,68,0.15)" }}
+        />
+        {/* LONG zone (right, green) - above long entry */}
         <div
           className="absolute top-0 bottom-0 right-0"
-          style={{ width: `${100 - entryThrPct}%`, background: "rgba(16,185,129,0.2)" }}
-        />
-        {/* Hysteresis zone (yellow-ish) - between exit and entry */}
-        <div
-          className="absolute top-0 bottom-0"
-          style={{
-            left: `${exitThrPct}%`,
-            width: `${entryThrPct - exitThrPct}%`,
-            background: "rgba(251,191,36,0.1)"
-          }}
+          style={{ width: `${100 - longEntryPct}%`, background: "rgba(16,185,129,0.15)" }}
         />
 
-        {/* Exit threshold marker */}
+        {/* Center line (zero) */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-amber-500/70"
-          style={{ left: `${exitThrPct}%` }}
+          className="absolute top-0 bottom-0 w-0.5 bg-gray-600"
+          style={{ left: "50%" }}
         />
-        {/* Entry threshold marker */}
+
+        {/* Short entry threshold marker (left) */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-red-500/70"
+          style={{ left: `${shortEntryPct}%` }}
+        />
+        {/* Short exit threshold marker */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-red-400/40"
+          style={{ left: `${shortExitPct}%` }}
+        />
+
+        {/* Long exit threshold marker */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-green-400/40"
+          style={{ left: `${longExitPct}%` }}
+        />
+        {/* Long entry threshold marker (right) */}
         <div
           className="absolute top-0 bottom-0 w-0.5 bg-green-500/70"
-          style={{ left: `${entryThrPct}%` }}
+          style={{ left: `${longEntryPct}%` }}
         />
 
         {/* Needle */}
@@ -123,29 +149,23 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
         )}
       </div>
 
-      {/* Labels - simple */}
+      {/* Labels */}
       <div className="flex justify-between text-xs px-1">
+        <span className="text-red-500">-1</span>
+        <span className="text-red-400 text-[10px]">short {SHORT_ENTRY.toFixed(2)}</span>
         <span className="text-gray-600">0</span>
-        <span className="text-amber-500">
-          exit {EXIT_THR.toFixed(2)}
-        </span>
-        <span className="text-green-500">
-          entry {ENTRY_THR.toFixed(2)}
-        </span>
-        <span className="text-gray-600">+1.0</span>
+        <span className="text-green-400 text-[10px]">long {LONG_ENTRY.toFixed(2)}</span>
+        <span className="text-green-500">+1</span>
       </div>
-
-      {/* Bias info */}
-      {entryBias > 0 && (
-        <div className="text-[10px] text-gray-600 text-center">
-          hysteresis: entry − exit = {entryBias.toFixed(3)} (prevents rapid switching)
-        </div>
-      )}
 
       {/* Open position */}
       {openPosition && (
-        <div className="text-xs px-3 py-2 rounded-lg font-medium bg-green-500/10 text-green-400 border border-green-500/20">
-          Open LONG @ ${Number(openPosition.entryPrice).toLocaleString("en", { minimumFractionDigits: 2 })}
+        <div className={`text-xs px-3 py-2 rounded-lg font-medium border ${
+          openPosition.side === "long"
+            ? "bg-green-500/10 text-green-400 border-green-500/20"
+            : "bg-red-500/10 text-red-400 border-red-500/20"
+        }`}>
+          Open {openPosition.side.toUpperCase()} @ ${Number(openPosition.entryPrice).toLocaleString("en", { minimumFractionDigits: 2 })}
         </div>
       )}
 
