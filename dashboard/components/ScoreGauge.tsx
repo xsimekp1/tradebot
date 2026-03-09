@@ -129,22 +129,25 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
         )}
       </div>
 
-      {/* Labels */}
-      <div className="flex justify-between text-xs text-gray-600">
-        <span>SHORT −1.0</span>
-        <span className="text-red-500/60">−{LONG_THR.toFixed(2)}</span>
-        <span>0</span>
-        <span className="text-green-500/60">+{LONG_THR.toFixed(2)}</span>
-        <span>LONG +1.0</span>
-      </div>
-
-      {/* Entry bias info */}
-      {entryBias > 0 && (
-        <div className="text-xs text-cyan-400/70 flex items-center gap-2">
-          <span className="w-3 h-px bg-cyan-400/60" style={{ borderTop: "1px dashed" }} />
-          <span>Entry threshold: ±{ENTRY_LONG_THR.toFixed(3)} (bias +{entryBias.toFixed(3)})</span>
+      {/* Labels - two rows: exit thresholds and entry thresholds */}
+      <div className="space-y-0.5 text-xs">
+        <div className="flex justify-between text-gray-600">
+          <span>SHORT −1.0</span>
+          <span className="text-red-500/60">exit −{LONG_THR.toFixed(2)}</span>
+          <span>0</span>
+          <span className="text-green-500/60">exit +{LONG_THR.toFixed(2)}</span>
+          <span>LONG +1.0</span>
         </div>
-      )}
+        {entryBias > 0 && (
+          <div className="flex justify-between text-cyan-400/50">
+            <span></span>
+            <span>entry −{ENTRY_LONG_THR.toFixed(2)}</span>
+            <span className="text-gray-700">bias ±{entryBias.toFixed(2)}</span>
+            <span>entry +{ENTRY_LONG_THR.toFixed(2)}</span>
+            <span></span>
+          </div>
+        )}
+      </div>
 
       {/* Open position */}
       {openPosition && (
