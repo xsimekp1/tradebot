@@ -27,6 +27,7 @@ type BackendChannelInfo = {
   resistance_slope?: number;
   resistance_breaks?: number;
   resistance_breaks_pct?: number;
+  ref_timestamp?: number;  // ms since epoch when channel was computed
 } | null;
 
 type Props = { prices: Candle[]; trades: Trade[]; backendChannelInfo?: BackendChannelInfo };
@@ -252,13 +253,17 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     let supportLine: ResistanceLine | null = null;
 
     if (backendChannelInfo?.resistance_slope !== undefined && backendChannelInfo?.support_slope !== undefined) {
-      const currentTime = prices[prices.length - 1].time;
+      // Use backend's ref_timestamp (when channel was computed) for proper extrapolation
+      const refTime = backendChannelInfo.ref_timestamp ?? prices[prices.length - 1].time;
       const rSlopePerMs = backendChannelInfo.resistance_slope / MS_PER_BAR;
       const sSlopePerMs = backendChannelInfo.support_slope / MS_PER_BAR;
 
+      // Line equation: price = intercept + slope * time (with refTime = 0)
+      // At ref_timestamp, line should equal support/resistance_price
+      // So: intercept = line_price - slope * ref_timestamp
       resistanceLine = {
         slope: rSlopePerMs,
-        intercept: backendChannelInfo.resistance_price - rSlopePerMs * currentTime,
+        intercept: backendChannelInfo.resistance_price - rSlopePerMs * refTime,
         refTime: 0,
         score: 0,
         breakthroughs: [],
@@ -266,7 +271,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
       };
       supportLine = {
         slope: sSlopePerMs,
-        intercept: backendChannelInfo.support_price - sSlopePerMs * currentTime,
+        intercept: backendChannelInfo.support_price - sSlopePerMs * refTime,
         refTime: 0,
         score: 0,
         breakthroughs: [],
@@ -503,48 +508,6 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* Backend channel info - what the trading bot actually uses */}
-      {backendChannelInfo && (
-        <div className="mt-3 px-1">
-          <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Trading Bot Channel <span className="text-indigo-400">(Alpaca 1m - USED FOR SIGNALS)</span></div>
-          <div className="bg-[#12141a] rounded-lg border border-indigo-500/30 p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Support</div>
-                <div className="text-emerald-400 font-medium mt-0.5">${(backendChannelInfo.support_price / 1000).toFixed(2)}k</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Resistance</div>
-                <div className="text-rose-400 font-medium mt-0.5">${(backendChannelInfo.resistance_price / 1000).toFixed(2)}k</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Width</div>
-                <div className="text-white font-medium mt-0.5">${backendChannelInfo.channel_width.toFixed(0)}</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Current</div>
-                <div className="text-white font-medium mt-0.5">${(backendChannelInfo.current_price / 1000).toFixed(2)}k</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-[10px] uppercase">Position</div>
-                <div className="mt-1">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gradient-to-r from-emerald-500/30 to-rose-500/30 rounded-full relative">
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white/70"
-                        style={{ left: `${Math.max(0, Math.min(100, backendChannelInfo.position_pct))}%`, transform: 'translate(-50%, -50%)' }}
-                      />
-                    </div>
-                    <span className="text-indigo-400 font-bold w-12 text-right">
-                      {backendChannelInfo.position_pct.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

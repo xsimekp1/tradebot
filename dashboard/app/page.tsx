@@ -101,7 +101,6 @@ export default function Dashboard() {
               weights={status?.weights ?? activeWeights?.weights ?? null}
               threshold={status?.threshold}
               entryBias={status?.entryBias}
-              channelInfo={status?.channelInfo ?? null}
             />
           </div>
 

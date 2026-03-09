@@ -1,17 +1,5 @@
 "use client";
 
-type ChannelInfo = {
-  support_price: number;
-  resistance_price: number;
-  channel_width: number;
-  position_pct: number;
-  current_price: number;
-  support_breaks: number;
-  support_breaks_pct: number;
-  resistance_breaks: number;
-  resistance_breaks_pct: number;
-};
-
 type Props = {
   score: number | null;
   openPosition: { side: string; entryPrice: number } | null;
@@ -19,7 +7,6 @@ type Props = {
   weights: Record<string, number> | null;
   threshold?: number;
   entryBias?: number;
-  channelInfo?: ChannelInfo | null;
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -34,7 +21,7 @@ const SIGNAL_COLORS: Record<string, string> = {
   channel_slope: "#a855f7",
 };
 
-export function ScoreGauge({ score, openPosition, signalValues, weights, threshold = 0.15, entryBias = 0.03, channelInfo }: Props) {
+export function ScoreGauge({ score, openPosition, signalValues, weights, threshold = 0.15, entryBias = 0.03 }: Props) {
   const noData = score === null;
   const s = score ?? 0;
 
@@ -210,33 +197,6 @@ export function ScoreGauge({ score, openPosition, signalValues, weights, thresho
                 </div>
               );
             })}
-        </div>
-      )}
-
-      {/* Channel debug info */}
-      {channelInfo && (
-        <div className="mt-3 pt-3 border-t border-[#2a2d3a]">
-          <div className="text-[10px] text-gray-600 uppercase tracking-wide mb-1">Channel Debug</div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="bg-[#2a2d3a]/50 rounded px-2 py-1">
-              <div className="text-gray-500">Support</div>
-              <div className="text-red-400 font-mono">${channelInfo.support_price.toLocaleString("en", { minimumFractionDigits: 2 })}</div>
-              <div className="text-[10px] text-gray-600">{channelInfo.support_breaks_pct}% breaks</div>
-            </div>
-            <div className="bg-[#2a2d3a]/50 rounded px-2 py-1">
-              <div className="text-gray-500">Price</div>
-              <div className="text-white font-mono">${channelInfo.current_price.toLocaleString("en", { minimumFractionDigits: 2 })}</div>
-              <div className="text-[10px] text-cyan-400">{channelInfo.position_pct}% in channel</div>
-            </div>
-            <div className="bg-[#2a2d3a]/50 rounded px-2 py-1">
-              <div className="text-gray-500">Resistance</div>
-              <div className="text-green-400 font-mono">${channelInfo.resistance_price.toLocaleString("en", { minimumFractionDigits: 2 })}</div>
-              <div className="text-[10px] text-gray-600">{channelInfo.resistance_breaks_pct}% breaks</div>
-            </div>
-          </div>
-          <div className="mt-1 text-[10px] text-gray-600 text-center">
-            Width: ${channelInfo.channel_width.toLocaleString("en", { minimumFractionDigits: 2 })}
-          </div>
         </div>
       )}
 

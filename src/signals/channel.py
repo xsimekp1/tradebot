@@ -341,6 +341,12 @@ class ChannelPositionSignal(BaseSignal):
         r_breaks = int(np.sum(prices > resistance_line_vals))
         r_break_pct = r_breaks / len(prices) * 100
 
+        # Get timestamp of the last bar (for frontend line extrapolation)
+        try:
+            last_bar_time = int(bars.index[-1].timestamp() * 1000)  # ms since epoch
+        except Exception:
+            last_bar_time = None
+
         # Store channel info for external access
         self.last_channel_info = {
             "support_price": round(support_price, 2),
@@ -354,6 +360,7 @@ class ChannelPositionSignal(BaseSignal):
             "resistance_breaks": r_breaks,
             "resistance_breaks_pct": round(r_break_pct, 1),
             "resistance_slope": round(r_slope, 6),
+            "ref_timestamp": last_bar_time,  # When these values were computed
         }
 
         # Linear signal: +1 at support, -1 at resistance
