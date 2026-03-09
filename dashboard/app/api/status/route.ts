@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { readFileSync } from "fs";
 import getDb from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// Try to read channel info from cache file
-function getChannelInfo(): Record<string, number> | null {
+// Read channel info from database cache table
+async function getChannelInfoFromDb(sql: ReturnType<typeof getDb>): Promise<Record<string, number> | null> {
   try {
-    const data = readFileSync("/tmp/channel_info.json", "utf8");
-    return JSON.parse(data);
+    const [row] = await sql`
+      SELECT value FROM bot_cache WHERE key = 'channel_info'
+    `;
+    return row?.value ?? null;
   } catch {
     return null;
   }
@@ -78,7 +79,7 @@ export async function GET() {
       threshold,
       entryBias,
       openPosition: openPos ? { side: openPos.side, entryPrice: Number(openPos.entry_price) } : null,
-      channelInfo: getChannelInfo(),
+      channelInfo: await getChannelInfoFromDb(sql),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
