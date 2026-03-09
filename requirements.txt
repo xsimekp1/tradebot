@@ -1,5 +1,6 @@
 alpaca-py>=0.13.0
 ib_insync>=0.9.86
+nest_asyncio
 pytz
 SQLAlchemy==2.0.*
 asyncpg
