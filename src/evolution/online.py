@@ -337,9 +337,10 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
              allow_short: bool = False, record_trades: bool = False,
-             fee_pct: float = 0.0025, entry_bias: float = 0.0) -> dict:
+             fee_pct: float = 0.0025, entry_bias: float = 0.0,
+             stop_loss_pct: float = 0.01) -> dict:
     """
-    Simulate trading strategy with transaction costs.
+    Simulate trading strategy with transaction costs and stop loss.
 
     Args:
         fee_pct: Transaction fee as percentage (default 0.25% = 0.0025 per trade)
@@ -348,11 +349,14 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     Positive value = more conservative (harder to enter trades).
                     E.g., entry_bias=0.05 means need score > 0.20 instead of 0.15.
                     Does NOT affect exit thresholds - easy to exit when signal reverses.
+        stop_loss_pct: Stop loss as percentage from entry (default 1% = 0.01)
     """
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
 
     prices = df["close"].values
+    lows = df["low"].values if "low" in df.columns else prices
+    highs = df["high"].values if "high" in df.columns else prices
     timestamps = [str(t) for t in df.index]
     capital = 10_000.0
     pos_size = 1_000.0
@@ -369,7 +373,46 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
 
     for i in range(LOOKBACK, len(df)):
         price = prices[i]
+        low = lows[i]
+        high = highs[i]
         score = scores[i]
+
+        # Check trailing stop loss first (before signal-based exit)
+        if position is not None and stop_loss_pct > 0:
+            if position["side"] == "long":
+                # Update highest price (trailing)
+                position["highest"] = max(position["highest"], high)
+                # Trailing stop = highest * (1 - stop_loss_pct)
+                stop_price = position["highest"] * (1 - stop_loss_pct)
+                if low <= stop_price:
+                    # Trailing stop triggered for long
+                    exit_price = stop_price
+                    exit_value = position["qty"] * exit_price
+                    exit_fee = exit_value * fee_pct
+                    pnl = (exit_price - position["entry"]) * position["qty"] - exit_fee
+                    cash += exit_value - exit_fee
+                    total_fees += exit_fee
+                    trades.append(pnl)
+                    if record_trades:
+                        trades_log.append({"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                    position = None
+            elif position["side"] == "short":
+                # Update lowest price (trailing)
+                position["lowest"] = min(position["lowest"], low)
+                # Trailing stop = lowest * (1 + stop_loss_pct)
+                stop_price = position["lowest"] * (1 + stop_loss_pct)
+                if high >= stop_price:
+                    # Trailing stop triggered for short
+                    exit_price = stop_price
+                    exit_cost = position["qty"] * exit_price
+                    exit_fee = exit_cost * fee_pct
+                    pnl = (position["entry"] - exit_price) * position["qty"] - exit_fee
+                    cash -= exit_cost + exit_fee
+                    total_fees += exit_fee
+                    trades.append(pnl)
+                    if record_trades:
+                        trades_log.append({"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                    position = None
 
         if position is None:
             if score > entry_long_thr:
@@ -377,7 +420,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 qty = (pos_size - entry_fee) / price  # Buy slightly less due to fee
                 cash -= pos_size
                 total_fees += entry_fee
-                position = {"side": "long", "entry": price, "qty": qty, "idx": i}
+                position = {"side": "long", "entry": price, "qty": qty, "idx": i, "highest": price}
                 if record_trades:
                     trades_log.append({"action": "open", "side": "long", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
             elif allow_short and score < entry_short_thr:
@@ -385,7 +428,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 qty = pos_size / price
                 cash += pos_size - entry_fee
                 total_fees += entry_fee
-                position = {"side": "short", "entry": price, "qty": qty, "idx": i}
+                position = {"side": "short", "entry": price, "qty": qty, "idx": i, "lowest": price}
                 if record_trades:
                     trades_log.append({"action": "open", "side": "short", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
         elif position["side"] == "long" and score < short_thr:
