@@ -19,6 +19,7 @@ const SIGNAL_COLORS: Record<string, string> = {
   breakout: "#f43f5e",
   channel_position: "#ec4899",
   channel_slope: "#a855f7",
+  channel_trend: "#14b8a6",  // teal - rising/falling channel
 };
 
 export function ScoreGauge({ score, openPosition, signalValues, weights, threshold = 0.15, entryBias = 0.03 }: Props) {

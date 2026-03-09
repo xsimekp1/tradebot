@@ -5,7 +5,7 @@ from src.signals.vwap import VWAPSignal
 from src.signals.atr import ATRSignal
 from src.signals.volume import VolumeSignal
 from src.signals.breakout import BreakoutSignal
-from src.signals.channel import ChannelPositionSignal, ChannelSlopeSignal
+from src.signals.channel import ChannelPositionSignal, ChannelSlopeSignal, ChannelTrendSignal
 
 def make_signals():
     return [
@@ -18,6 +18,7 @@ def make_signals():
         BreakoutSignal(),
         ChannelPositionSignal(lookback=600),
         ChannelSlopeSignal(lookback=600),
+        ChannelTrendSignal(lookback=600),
     ]
 
 ALL_SIGNALS = make_signals()
@@ -25,5 +26,6 @@ ALL_SIGNALS = make_signals()
 __all__ = [
     "MomentumSignal", "RSISignal", "BollingerSignal", "VWAPSignal",
     "ATRSignal", "VolumeSignal", "BreakoutSignal",
-    "ChannelPositionSignal", "ChannelSlopeSignal", "ALL_SIGNALS", "make_signals",
+    "ChannelPositionSignal", "ChannelSlopeSignal", "ChannelTrendSignal",
+    "ALL_SIGNALS", "make_signals",
 ]

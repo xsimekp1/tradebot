@@ -6,13 +6,14 @@ def compute_score(signals: dict[str, float], weights: dict[str, float]) -> float
 
 
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "momentum": 0.10,
-    "rsi": 0.08,
-    "bollinger": 0.08,
-    "vwap": 0.06,
-    "atr": 0.03,
-    "volume": 0.05,
-    "breakout": 0.05,
-    "channel_position": 0.45,  # DOMINANT - buy near support, sell near resistance
-    "channel_slope": 0.10,
+    "momentum": 0.08,
+    "rsi": 0.06,
+    "bollinger": 0.06,
+    "vwap": 0.04,
+    "atr": 0.02,
+    "volume": 0.04,
+    "breakout": 0.04,
+    "channel_position": 0.40,  # DOMINANT - buy near support, sell near resistance
+    "channel_slope": 0.06,
+    "channel_trend": 0.20,    # STRONG - both lines rising = bullish, both falling = bearish
 }

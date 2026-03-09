@@ -442,3 +442,71 @@ class ChannelSlopeSignal(BaseSignal):
         normalized_slope = avg_slope / (current_price * 0.001) if current_price > 0 else 0.0
 
         return max(-1.0, min(1.0, normalized_slope))
+
+
+class ChannelTrendSignal(BaseSignal):
+    """
+    Strong binary signal based on channel direction.
+
+    Both support AND resistance rising → +1 (strong bullish)
+    Both support AND resistance falling → -1 (strong bearish)
+    Mixed directions → 0 (no clear trend)
+    """
+
+    name = "channel_trend"
+
+    def __init__(self, lookback: int = 600):
+        self.lookback = lookback
+        self._prev_r_slope: Optional[float] = None
+        self._prev_r_intercept: Optional[float] = None
+        self._prev_s_slope: Optional[float] = None
+        self._prev_s_intercept: Optional[float] = None
+
+    def compute(self, bars: pd.DataFrame) -> float:
+        if len(bars) < 30:
+            return 0.0
+
+        prices = bars["close"].values[-self.lookback:] if len(bars) > self.lookback else bars["close"].values
+        price_min, price_max = prices.min(), prices.max()
+        price_range = price_max - price_min
+
+        r_slope, r_intercept, _ = find_optimal_resistance_line(
+            prices, prev_slope=self._prev_r_slope, prev_intercept=self._prev_r_intercept
+        )
+        s_slope, s_intercept, _ = find_optimal_support_line(
+            prices, prev_slope=self._prev_s_slope, prev_intercept=self._prev_s_intercept
+        )
+
+        # Extrapolate lines to current bar for sanity check
+        n = len(prices) - 1
+        resistance_price = r_intercept + r_slope * n
+        support_price = s_intercept + s_slope * n
+
+        # SANITY CHECK: lines must be within reasonable bounds
+        max_deviation = price_range * 2.0
+        r_sane = abs(resistance_price - price_max) < max_deviation
+        s_sane = abs(support_price - price_min) < max_deviation
+
+        if not r_sane or not s_sane:
+            self._prev_r_slope = None
+            self._prev_r_intercept = None
+            self._prev_s_slope = None
+            self._prev_s_intercept = None
+            if not r_sane:
+                r_slope, r_intercept, _ = find_optimal_resistance_line(prices)
+            if not s_sane:
+                s_slope, s_intercept, _ = find_optimal_support_line(prices)
+
+        # Cache for next call
+        self._prev_r_slope = r_slope
+        self._prev_r_intercept = r_intercept
+        self._prev_s_slope = s_slope
+        self._prev_s_intercept = s_intercept
+
+        # Binary trend signal: both rising = +1, both falling = -1, mixed = 0
+        if r_slope > 0 and s_slope > 0:
+            return 1.0  # Strong bullish - rising channel
+        elif r_slope < 0 and s_slope < 0:
+            return -1.0  # Strong bearish - falling channel
+        else:
+            return 0.0  # Mixed - no clear trend
