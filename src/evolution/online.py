@@ -41,6 +41,7 @@ def _db_url() -> str:
 def load_active_weights() -> tuple[dict, int, float, float]:
     """Returns (signal_weights, version, threshold, entry_bias). Falls back to defaults."""
     import psycopg
+    from src.engine.scoring import DEFAULT_WEIGHTS
     try:
         with psycopg.connect(_db_url()) as conn:
             row = conn.execute(
@@ -51,6 +52,12 @@ def load_active_weights() -> tuple[dict, int, float, float]:
                 perf = dict(row[2]) if row[2] else {}
                 threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
                 entry_bias = float(perf.get("entry_bias", DEFAULT_ENTRY_BIAS))
+                # Merge in any NEW signals from DEFAULT_WEIGHTS that aren't in active model
+                for signal_name in SIGNAL_NAMES:
+                    if signal_name not in weights_dict:
+                        default_w = DEFAULT_WEIGHTS.get(signal_name, 0.05)
+                        weights_dict[signal_name] = default_w
+                        print(f"{Fore.CYAN}Added new signal: {signal_name} = {default_w}{Style.RESET_ALL}")
                 return weights_dict, int(row[1]), threshold, entry_bias
     except Exception as e:
         print(f"{Fore.YELLOW}DB load failed: {e}{Style.RESET_ALL}")

@@ -41,6 +41,11 @@ async def run_nightly_mutation():
         if active:
             current_weights = dict(active.weights)
             current_version = active.version
+            # Merge in any NEW signals from DEFAULT_WEIGHTS that aren't in active model
+            for signal_name, default_weight in DEFAULT_WEIGHTS.items():
+                if signal_name not in current_weights:
+                    current_weights[signal_name] = default_weight
+                    print(f"[mutator] Added new signal: {signal_name} = {default_weight}")
         else:
             current_weights = dict(DEFAULT_WEIGHTS)
             current_version = 0
