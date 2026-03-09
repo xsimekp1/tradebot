@@ -25,6 +25,10 @@ DEFAULT_THRESHOLD = 0.15
 THRESHOLD_MIN = 0.05
 THRESHOLD_MAX = 0.40
 
+DEFAULT_ENTRY_BIAS = 0.03  # Start with small bias to compensate for fees
+ENTRY_BIAS_MIN = 0.0
+ENTRY_BIAS_MAX = 0.15
+
 
 def _db_url() -> str:
     return (
@@ -34,8 +38,8 @@ def _db_url() -> str:
     )
 
 
-def load_active_weights() -> tuple[dict, int, float]:
-    """Returns (signal_weights, version, threshold). Falls back to equal weights."""
+def load_active_weights() -> tuple[dict, int, float, float]:
+    """Returns (signal_weights, version, threshold, entry_bias). Falls back to defaults."""
     import psycopg
     try:
         with psycopg.connect(_db_url()) as conn:
@@ -46,10 +50,11 @@ def load_active_weights() -> tuple[dict, int, float]:
                 weights_dict = dict(row[0])
                 perf = dict(row[2]) if row[2] else {}
                 threshold = float(perf.get("threshold", weights_dict.pop("_threshold", DEFAULT_THRESHOLD)))
-                return weights_dict, int(row[1]), threshold
+                entry_bias = float(perf.get("entry_bias", DEFAULT_ENTRY_BIAS))
+                return weights_dict, int(row[1]), threshold, entry_bias
     except Exception as e:
         print(f"{Fore.YELLOW}DB load failed: {e}{Style.RESET_ALL}")
-    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD
+    return {n: 1.0 / len(SIGNAL_NAMES) for n in SIGNAL_NAMES}, 0, DEFAULT_THRESHOLD, DEFAULT_ENTRY_BIAS
 
 
 def _ensure_evolution_results_table(conn) -> None:
@@ -206,13 +211,17 @@ def compute_signal_matrix(df, label: str = "") -> np.ndarray:
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
              allow_short: bool = False, record_trades: bool = False,
-             fee_pct: float = 0.0025) -> dict:
+             fee_pct: float = 0.0025, entry_bias: float = 0.0) -> dict:
     """
     Simulate trading strategy with transaction costs.
 
     Args:
         fee_pct: Transaction fee as percentage (default 0.25% = 0.0025 per trade)
                  This covers spread + commission. Applied on entry and exit.
+        entry_bias: Additional threshold offset for entering positions (default 0).
+                    Positive value = more conservative (harder to enter trades).
+                    E.g., entry_bias=0.05 means need score > 0.20 instead of 0.15.
+                    Does NOT affect exit thresholds - easy to exit when signal reverses.
     """
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
@@ -228,12 +237,16 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     equity = np.full(len(df), capital, dtype=np.float64)
     total_fees = 0.0
 
+    # Entry thresholds are higher (more conservative) due to entry_bias
+    entry_long_thr = long_thr + entry_bias
+    entry_short_thr = short_thr - entry_bias  # More negative = harder to short
+
     for i in range(LOOKBACK, len(df)):
         price = prices[i]
         score = scores[i]
 
         if position is None:
-            if score > long_thr:
+            if score > entry_long_thr:
                 entry_fee = pos_size * fee_pct
                 qty = (pos_size - entry_fee) / price  # Buy slightly less due to fee
                 cash -= pos_size
@@ -241,7 +254,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 position = {"side": "long", "entry": price, "qty": qty, "idx": i}
                 if record_trades:
                     trades_log.append({"type": "buy", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
-            elif allow_short and score < short_thr:
+            elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
                 qty = pos_size / price
                 cash += pos_size - entry_fee
@@ -307,6 +320,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "profit_factor": round(min(pf, 999.0), 4),
         "max_dd": round(max_dd, 4),
         "total_fees": round(total_fees, 2),
+        "entry_bias": round(entry_bias, 4),
     }
 
     if record_trades:
@@ -335,10 +349,16 @@ def mutate_threshold(threshold: float, sigma: float) -> float:
     return float(np.clip(new_thr, THRESHOLD_MIN, THRESHOLD_MAX))
 
 
+def mutate_entry_bias(entry_bias: float, sigma: float) -> float:
+    """Mutate entry_bias with small noise, clamped to valid range."""
+    new_bias = entry_bias + float(np.random.normal(0, sigma * 0.3))
+    return float(np.clip(new_bias, ENTRY_BIAS_MIN, ENTRY_BIAS_MAX))
+
+
 # ── Evolution cycle ───────────────────────────────────────────────────────────
 
 def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
-    current_weights, version, current_threshold = load_active_weights()
+    current_weights, version, current_threshold, current_entry_bias = load_active_weights()
 
     # Integrate any new signals added since last saved version
     new_signals = [n for n in SIGNAL_NAMES if n not in current_weights]
@@ -354,7 +374,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
 
     evolution_start = time.time()
 
-    print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}, threshold={current_threshold:.3f}){Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Evolution v{version} → {n_mutations} mutations (sigma={sigma}, thr={current_threshold:.3f}, bias={current_entry_bias:.3f}){Style.RESET_ALL}")
     top = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
 
@@ -372,14 +392,18 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
     current_arr = np.array([current_weights.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
-    current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold)
+    current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold,
+                           entry_bias=current_entry_bias)
 
-    candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos, "threshold": current_threshold, "label": "current"}]
+    candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos,
+                   "threshold": current_threshold, "entry_bias": current_entry_bias, "label": "current"}]
     for i in range(n_mutations):
         w_dict = mutate(current_weights, sigma)
         w_arr = np.array([w_dict.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
         thr = mutate_threshold(current_threshold, sigma)
-        candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "oos": simulate(df_test, mat_test, w_arr, thr, -thr), "label": f"mut#{i+1:02d}"})
+        bias = mutate_entry_bias(current_entry_bias, sigma)
+        oos = simulate(df_test, mat_test, w_arr, thr, -thr, entry_bias=bias)
+        candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "entry_bias": bias, "oos": oos, "label": f"mut#{i+1:02d}"})
 
     candidates.sort(key=lambda c: (c["oos"]["sharpe"], c["oos"]["return_pct"]), reverse=True)
 
@@ -410,8 +434,9 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
         return
 
     best_thr = best["threshold"]
-    is_stats = simulate(df_train, mat_train, best["arr"], best_thr, -best_thr)
-    best_oos_full = simulate(df_test, mat_test, best["arr"], best_thr, -best_thr, record_trades=True)
+    best_bias = best["entry_bias"]
+    is_stats = simulate(df_train, mat_train, best["arr"], best_thr, -best_thr, entry_bias=best_bias)
+    best_oos_full = simulate(df_test, mat_test, best["arr"], best_thr, -best_thr, record_trades=True, entry_bias=best_bias)
     new_version = version + 1
     save_weights(
         best["weights"],
@@ -419,6 +444,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
         {"in_sample": is_stats, "out_of_sample": best_oos_full,
          "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma,
          "threshold": best_thr,
+         "entry_bias": best_bias,
          "evolution_duration_sec": round(evolution_duration, 1),
          "signal_computation_sec": round(signal_duration, 1)},
         best_thr,
@@ -433,7 +459,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
         model_changed=True,
     )
 
-    print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, threshold={best_thr:.3f}):{Style.RESET_ALL}")
+    print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, thr={best_thr:.3f}, bias={best_bias:.3f}):{Style.RESET_ALL}")
     print(f"  {'Signal':<12} {'Old':>7} {'New':>7} {'Δ':>7}")
     print(f"  {'-'*12} {'-'*7} {'-'*7} {'-'*7}")
     for name in sorted(best["weights"], key=best["weights"].get, reverse=True):
@@ -445,4 +471,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     thr_delta = best_thr - current_threshold
     thr_col = Fore.GREEN if thr_delta > 0 else Fore.RED if thr_delta < 0 else Style.RESET_ALL
     print(f"  {'_threshold':<12} {current_threshold:>7.4f} {best_thr:>7.4f} {thr_col}{thr_delta:>+7.4f}{Style.RESET_ALL}")
+    bias_delta = best_bias - current_entry_bias
+    bias_col = Fore.GREEN if bias_delta > 0 else Fore.RED if bias_delta < 0 else Style.RESET_ALL
+    print(f"  {'_entry_bias':<12} {current_entry_bias:>7.4f} {best_bias:>7.4f} {bias_col}{bias_delta:>+7.4f}{Style.RESET_ALL}")
     print(f"\n  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")
