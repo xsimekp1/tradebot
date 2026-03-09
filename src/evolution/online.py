@@ -274,18 +274,24 @@ def fetch_bars(symbol: str):
 
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
-def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = False) -> np.ndarray:
+def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute signal matrix for all bars.
+    Compute signal matrix and channel spreads for all bars.
 
     Args:
         step: Compute signals every N bars (interpolate in between).
               step=1 is full resolution, step=5 is 5x faster but less precise.
         profile: If True, track and print per-signal timing at the end.
+
+    Returns:
+        (signal_matrix, channel_spreads) - matrix of signal values and array of channel spreads
     """
+    from src.signals.channel import ChannelPositionSignal
+
     signals = make_signals()  # fresh instances — don't pollute live trading state
     n = len(df)
     matrix = np.zeros((n, len(signals)), dtype=np.float32)
+    channel_spreads = np.zeros(n, dtype=np.float32)  # Track channel spread per bar
     total = (n - LOOKBACK) // step
     tag = f"{label}signals" if label else "signals"
     # Report progress every 1000 bars or ~5% (whichever is smaller)
@@ -294,7 +300,15 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
     # Per-signal timing
     signal_times = np.zeros(len(signals), dtype=np.float64) if profile else None
 
+    # Find channel_position signal index
+    channel_sig_idx = None
+    for j, sig in enumerate(signals):
+        if isinstance(sig, ChannelPositionSignal):
+            channel_sig_idx = j
+            break
+
     last_values = np.zeros(len(signals), dtype=np.float32)
+    last_spread = 0.0
     computed_idx = 0
     for idx, i in enumerate(range(LOOKBACK, n)):
         if idx % step == 0:
@@ -309,9 +323,18 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
                     signal_times[j] += time.time() - t0
                 else:
                     last_values[j] = sig.safe_compute(window)
+
+            # Extract channel spread from channel_position signal
+            if channel_sig_idx is not None:
+                ch_sig = signals[channel_sig_idx]
+                if hasattr(ch_sig, 'last_channel_info') and ch_sig.last_channel_info:
+                    ci = ch_sig.last_channel_info
+                    last_spread = ci.get('resistance_price', 0) - ci.get('support_price', 0)
+
             computed_idx += 1
         # Use last computed values (interpolation = hold previous value)
         matrix[i] = last_values
+        channel_spreads[i] = last_spread
 
     # Print profiling results
     if profile and signal_times is not None:
@@ -329,27 +352,28 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
         print(f"  {'-'*50}")
         print(f"  {'TOTAL':<20} {total_time:>10.2f} {'100.0':>7}% {total_time/computed_idx*1000:>9.2f}")
 
-    return matrix
+    return matrix, channel_spreads
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
 
 def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
+             channel_spreads: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
              allow_short: bool = True, record_trades: bool = False,
-             fee_pct: float = 0.0025, entry_bias: float = 0.0,
-             stop_loss_pct: float = 0.02) -> dict:
+             fee_pct: float = 0.0025, entry_bias: float = 0.0) -> dict:
     """
-    Simulate trading strategy with transaction costs and stop loss.
+    Simulate trading strategy with transaction costs and channel-based stop loss.
 
     Args:
+        channel_spreads: Array of channel spreads per bar (resistance - support).
+                         Stop loss = half of channel spread.
         fee_pct: Transaction fee as percentage (default 0.25% = 0.0025 per trade)
                  This covers spread + commission. Applied on entry and exit.
         entry_bias: Additional threshold offset for entering positions (default 0).
                     Positive value = more conservative (harder to enter trades).
                     E.g., entry_bias=0.05 means need score > 0.20 instead of 0.15.
                     Does NOT affect exit thresholds - easy to exit when signal reverses.
-        stop_loss_pct: Stop loss as percentage from entry (default 1% = 0.01)
     """
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
@@ -377,13 +401,17 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         high = highs[i]
         score = scores[i]
 
+        # Dynamic stop loss = half of channel spread (resistance - support)
+        channel_spread = channel_spreads[i] if channel_spreads[i] > 0 else 5.0  # Fallback $5
+        stop_distance = channel_spread / 2  # Half channel spread
+
         # Check trailing stop loss first (before signal-based exit)
-        if position is not None and stop_loss_pct > 0:
+        if position is not None and stop_distance > 0:
             if position["side"] == "long":
                 # Update highest price (trailing)
                 position["highest"] = max(position["highest"], high)
-                # Trailing stop = highest * (1 - stop_loss_pct)
-                stop_price = position["highest"] * (1 - stop_loss_pct)
+                # Trailing stop = highest - half channel spread
+                stop_price = position["highest"] - stop_distance
                 if low <= stop_price:
                     # Trailing stop triggered for long
                     exit_price = stop_price
@@ -399,8 +427,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             elif position["side"] == "short":
                 # Update lowest price (trailing)
                 position["lowest"] = min(position["lowest"], low)
-                # Trailing stop = lowest * (1 + stop_loss_pct)
-                stop_price = position["lowest"] * (1 + stop_loss_pct)
+                # Trailing stop = lowest + half channel spread
+                stop_price = position["lowest"] + stop_distance
                 if high >= stop_price:
                     # Trailing stop triggered for short
                     exit_price = stop_price
@@ -453,8 +481,12 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             position = None
 
         if position:
-            pv = position["qty"] * price if position["side"] == "long" \
-                else position["qty"] * (2 * position["entry"] - price)
+            if position["side"] == "long":
+                pv = position["qty"] * price  # value of shares owned
+            else:
+                # Short: we received cash from sale, now owe shares
+                # pv = negative of current liability (cost to buy back)
+                pv = -position["qty"] * price
             equity[i] = cash + pv
         else:
             equity[i] = cash
@@ -567,15 +599,20 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     print("  Computing signal matrices...")
     signal_start = time.time()
     # Use step=5 for training (5x faster, slight precision loss is OK for selection)
-    mat_train = compute_signal_matrix(df_train, "Train ", step=5)
+    mat_train, spreads_train = compute_signal_matrix(df_train, "Train ", step=5)
     update_evolution_progress("computing_signals", 40, "Train signals done, computing test signals...")
     # Use step=1 for test (full precision for final evaluation, profile to see bottlenecks)
-    mat_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
+    mat_test, spreads_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
     signal_duration = time.time() - signal_start
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
+    # Show channel spread stats
+    valid_spreads = spreads_test[spreads_test > 0]
+    if len(valid_spreads) > 0:
+        print(f"  Channel spread: avg=${valid_spreads.mean():.2f}, min=${valid_spreads.min():.2f}, max=${valid_spreads.max():.2f}")
+
     current_arr = np.array([current_weights.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
-    current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold,
+    current_oos = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold,
                            entry_bias=current_entry_bias)
 
     update_evolution_progress("evaluating", 50, "Evaluating current strategy...")
@@ -587,7 +624,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
         w_arr = np.array([w_dict.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
         thr = mutate_threshold(current_threshold, sigma)
         bias = mutate_entry_bias(current_entry_bias, sigma)
-        oos = simulate(df_test, mat_test, w_arr, thr, -thr, entry_bias=bias)
+        oos = simulate(df_test, mat_test, w_arr, spreads_test, thr, -thr, entry_bias=bias)
         candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "entry_bias": bias, "oos": oos, "label": f"mut#{i+1:02d}"})
 
     candidates.sort(key=lambda c: (c["oos"]["sharpe"], c["oos"]["return_pct"]), reverse=True)
@@ -607,8 +644,8 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     if best["label"] == "current":
         print(f"\n  {Fore.YELLOW}Current strategy is best — keeping v{version}.{Style.RESET_ALL}")
         # Update performance metrics with current test results (includes fees now)
-        is_stats = simulate(df_train, mat_train, current_arr, current_threshold, -current_threshold, entry_bias=current_entry_bias)
-        oos_full = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias)
+        is_stats = simulate(df_train, mat_train, current_arr, spreads_train, current_threshold, -current_threshold, entry_bias=current_entry_bias)
+        oos_full = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias)
         update_performance(version, {
             "in_sample": is_stats,
             "out_of_sample": oos_full,
@@ -632,8 +669,8 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
 
     best_thr = best["threshold"]
     best_bias = best["entry_bias"]
-    is_stats = simulate(df_train, mat_train, best["arr"], best_thr, -best_thr, entry_bias=best_bias)
-    best_oos_full = simulate(df_test, mat_test, best["arr"], best_thr, -best_thr, record_trades=True, entry_bias=best_bias)
+    is_stats = simulate(df_train, mat_train, best["arr"], spreads_train, best_thr, -best_thr, entry_bias=best_bias)
+    best_oos_full = simulate(df_test, mat_test, best["arr"], spreads_test, best_thr, -best_thr, record_trades=True, entry_bias=best_bias)
     new_version = version + 1
     save_weights(
         best["weights"],
