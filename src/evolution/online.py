@@ -38,6 +38,28 @@ def _db_url() -> str:
     )
 
 
+def update_evolution_progress(phase: str, progress_pct: int, message: str = ""):
+    """Update evolution progress to bot_cache for frontend display."""
+    import psycopg
+    from datetime import datetime, timezone
+    try:
+        with psycopg.connect(_db_url()) as conn:
+            status = {
+                "phase": phase,  # idle, fetching, computing_signals, evaluating, saving
+                "progress_pct": progress_pct,
+                "message": message,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            conn.execute(
+                """INSERT INTO bot_cache (key, value) VALUES ('evolution_progress', %s::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = %s::jsonb""",
+                (json.dumps(status), json.dumps(status))
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"[evolution] Progress update failed: {e}")
+
+
 def load_active_weights() -> tuple[dict, int, float, float]:
     """Returns (signal_weights, version, threshold, entry_bias). Falls back to defaults."""
     import psycopg
@@ -491,16 +513,19 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     top = sorted(current_weights, key=current_weights.get, reverse=True)
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
 
+    update_evolution_progress("fetching", 5, f"Fetching {symbol} historical data...")
     df_train, df_test = fetch_bars(symbol)
 
     if len(df_train) < LOOKBACK + 50 or len(df_test) < LOOKBACK + 10:
         print(f"{Fore.RED}Not enough bars to evolve.{Style.RESET_ALL}")
         return
 
+    update_evolution_progress("computing_signals", 15, "Computing signal matrices...")
     print("  Computing signal matrices...")
     signal_start = time.time()
     # Use step=5 for training (5x faster, slight precision loss is OK for selection)
     mat_train = compute_signal_matrix(df_train, "Train ", step=5)
+    update_evolution_progress("computing_signals", 40, "Train signals done, computing test signals...")
     # Use step=1 for test (full precision for final evaluation, profile to see bottlenecks)
     mat_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
     signal_duration = time.time() - signal_start
@@ -510,9 +535,11 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     current_oos = simulate(df_test, mat_test, current_arr, current_threshold, -current_threshold,
                            entry_bias=current_entry_bias)
 
+    update_evolution_progress("evaluating", 50, "Evaluating current strategy...")
     candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos,
                    "threshold": current_threshold, "entry_bias": current_entry_bias, "label": "current"}]
     for i in range(n_mutations):
+        update_evolution_progress("evaluating", 50 + int(40 * (i + 1) / n_mutations), f"Testing mutation {i+1}/{n_mutations}...")
         w_dict = mutate(current_weights, sigma)
         w_arr = np.array([w_dict.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
         thr = mutate_threshold(current_threshold, sigma)
@@ -602,3 +629,4 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     bias_col = Fore.GREEN if bias_delta > 0 else Fore.RED if bias_delta < 0 else Style.RESET_ALL
     print(f"  {'_entry_bias':<12} {current_entry_bias:>7.4f} {best_bias:>7.4f} {bias_col}{bias_delta:>+7.4f}{Style.RESET_ALL}")
     print(f"\n  {Fore.CYAN}Total evolution time: {evolution_duration:.1f}s (signals: {signal_duration:.1f}s){Style.RESET_ALL}")
+    update_evolution_progress("idle", 100, f"Completed v{new_version if best['label'] != 'current' else version}")

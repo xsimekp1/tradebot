@@ -24,6 +24,7 @@ export default function ResearchPage() {
   const { data: weightsRaw } = useSWR("/api/weights", fetcher, { refreshInterval: 15_000 });
   const { data: status } = useSWR("/api/status", fetcher, { refreshInterval: 15_000 });
   const { data: evolStats } = useSWR("/api/evolution-stats", fetcher, { refreshInterval: 15_000 });
+  const { data: evolProgress } = useSWR("/api/evolution-progress", fetcher, { refreshInterval: 3_000 });
   const { data: backtestData } = useSWR("/api/backtest-chart", fetcher, { refreshInterval: 60_000 });
   const weightHistory: WeightRow[] = Array.isArray(weightsRaw) ? weightsRaw : [];
   const activeWeights = weightHistory.find((w) => w.is_active);
@@ -83,6 +84,27 @@ export default function ResearchPage() {
           positive={evolStats?.avgImprovement > 0}
         />
       </div>
+
+      {/* Evolution Progress Bar */}
+      {evolProgress?.phase && evolProgress.phase !== "idle" && (
+        <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+              Evolution in Progress
+            </h2>
+            <span className="text-xs text-indigo-400 animate-pulse">
+              {evolProgress.phase}
+            </span>
+          </div>
+          <div className="relative h-3 rounded-full bg-[#2a2d3a] overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-600 to-indigo-400 transition-all duration-500"
+              style={{ width: `${evolProgress.progress_pct ?? 0}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">{evolProgress.message || "Working..."}</p>
+        </div>
+      )}
 
       {/* Live score + active model side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
