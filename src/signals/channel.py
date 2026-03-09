@@ -220,7 +220,6 @@ class ChannelPositionSignal(BaseSignal):
     """
 
     name = "channel_position"
-    _log_counter = 0  # Class-level counter for periodic logging
 
     def __init__(self, lookback: int = 600):
         self.lookback = lookback
@@ -292,12 +291,6 @@ class ChannelPositionSignal(BaseSignal):
 
         # Position in channel: 0 = at support, 1 = at resistance
         position = (current_price - support_price) / channel_width
-
-        # Periodic logging (every 100 calls = ~1.5 hours with 1-min bars)
-        ChannelPositionSignal._log_counter += 1
-        if ChannelPositionSignal._log_counter % 100 == 1:
-            print(f"[channel] price={current_price:.2f} sup={support_price:.2f} res={resistance_price:.2f} "
-                  f"width={channel_width:.2f} pos={position*100:.0f}%")
 
         # If price is outside channel bounds, signal is unreliable — return neutral
         if position < 0.0 or position > 1.0:
