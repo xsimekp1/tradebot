@@ -279,13 +279,13 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
     }
 
     if (resistanceLine) {
-      const endPrice = resistanceLine.intercept + resistanceLine.slope * prices[prices.length - 1].time;
-      const startPrice = resistanceLine.intercept + resistanceLine.slope * prices[0].time;
+      const endPrice = resistanceLine.intercept + resistanceLine.slope * (prices[prices.length - 1].time - resistanceLine.refTime);
+      const startPrice = resistanceLine.intercept + resistanceLine.slope * (prices[0].time - resistanceLine.refTime);
       yMaxBase = Math.max(yMaxBase, startPrice, endPrice);
     }
     if (supportLine) {
-      const endPrice = supportLine.intercept + supportLine.slope * prices[prices.length - 1].time;
-      const startPrice = supportLine.intercept + supportLine.slope * prices[0].time;
+      const endPrice = supportLine.intercept + supportLine.slope * (prices[prices.length - 1].time - supportLine.refTime);
+      const startPrice = supportLine.intercept + supportLine.slope * (prices[0].time - supportLine.refTime);
       yMinBase = Math.min(yMinBase, startPrice, endPrice);
     }
 
@@ -328,10 +328,10 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
   const data = prices.map((p) => {
     const row: Record<string, number | null> = { time: p.time, close: p.close };
     if (resistanceLine) {
-      row.resistance = resistanceLine.intercept + resistanceLine.slope * p.time;
+      row.resistance = resistanceLine.intercept + resistanceLine.slope * (p.time - resistanceLine.refTime);
     }
     if (supportLine) {
-      row.support = supportLine.intercept + supportLine.slope * p.time;
+      row.support = supportLine.intercept + supportLine.slope * (p.time - supportLine.refTime);
     }
     return row;
   });
@@ -342,7 +342,8 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
 
   let resistanceInfo: { price: number; distPct: number } | null = null;
   if (resistanceLine) {
-    const linePrice = resistanceLine.intercept + resistanceLine.slope * currentTime;
+    // Use (currentTime - refTime) for frontend calculation, raw currentTime for backend (refTime=0)
+    const linePrice = resistanceLine.intercept + resistanceLine.slope * (currentTime - resistanceLine.refTime);
     resistanceInfo = {
       price: linePrice,
       distPct: ((linePrice - currentPrice) / currentPrice) * 100,
@@ -351,7 +352,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
 
   let supportInfo: { price: number; distPct: number } | null = null;
   if (supportLine) {
-    const linePrice = supportLine.intercept + supportLine.slope * currentTime;
+    const linePrice = supportLine.intercept + supportLine.slope * (currentTime - supportLine.refTime);
     supportInfo = {
       price: linePrice,
       distPct: ((currentPrice - linePrice) / currentPrice) * 100,
