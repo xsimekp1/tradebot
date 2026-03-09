@@ -81,13 +81,13 @@ def find_optimal_resistance_line(
             prev_slope = None  # Force fresh initialization below
 
     if prev_slope is None:
-        # Start with line ABOVE max price (resistance must be above all prices)
+        # Start with line through max price, with trend-based slope
         recent_avg = float(np.mean(prices[-n//4:]))
         old_avg = float(np.mean(prices[:n//4]))
         trend_slope = (recent_avg - old_avg) / (n * 0.75)
         current_slope = trend_slope
-        # Line passes ABOVE max price by 1% of price range
-        current_intercept = (max_price + price_range * 0.01) - current_slope * max_idx
+        # Line passes through max price point
+        current_intercept = max_price - current_slope * max_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
@@ -195,13 +195,13 @@ def find_optimal_support_line(
             prev_slope = None  # Force fresh initialization below
 
     if prev_slope is None:
-        # Start with line BELOW min price (support must be below all prices)
+        # Start with line through min price, with trend-based slope
         recent_avg = float(np.mean(prices[-n//4:]))
         old_avg = float(np.mean(prices[:n//4]))
         trend_slope = (recent_avg - old_avg) / (n * 0.75)
         current_slope = trend_slope
-        # Line passes BELOW min price by 1% of price range
-        current_intercept = (min_price - price_range * 0.01) - current_slope * min_idx
+        # Line passes through min price point
+        current_intercept = min_price - current_slope * min_idx
 
     best_score, best_avg_dist = evaluate(current_slope, current_intercept)
     best_slope = current_slope
@@ -300,10 +300,11 @@ class ChannelPositionSignal(BaseSignal):
         resistance_price = r_intercept + r_slope * n
         support_price = s_intercept + s_slope * n
 
-        # SANITY CHECK: resistance must be ABOVE current price, support must be BELOW
-        # If current price is outside channel, the line is wrong - reset and recompute
-        r_sane = resistance_price >= current_price * 0.998  # Allow tiny margin
-        s_sane = support_price <= current_price * 1.002
+        # SANITY CHECK: lines must be within reasonable bounds of price data
+        # If not, clear cache and recompute
+        max_deviation = price_range * 1.0  # Allow up to 1x price range deviation
+        r_sane = abs(resistance_price - price_max) < max_deviation
+        s_sane = abs(support_price - price_min) < max_deviation
 
         if not r_sane or not s_sane:
             # Reset cache - warm-start drifted too far
