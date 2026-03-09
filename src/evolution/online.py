@@ -238,13 +238,14 @@ def fetch_bars(symbol: str):
 
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
-def compute_signal_matrix(df, label: str = "", step: int = 1) -> np.ndarray:
+def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = False) -> np.ndarray:
     """
     Compute signal matrix for all bars.
 
     Args:
         step: Compute signals every N bars (interpolate in between).
               step=1 is full resolution, step=5 is 5x faster but less precise.
+        profile: If True, track and print per-signal timing at the end.
     """
     signals = make_signals()  # fresh instances — don't pollute live trading state
     n = len(df)
@@ -253,6 +254,9 @@ def compute_signal_matrix(df, label: str = "", step: int = 1) -> np.ndarray:
     tag = f"{label}signals" if label else "signals"
     # Report progress every 1000 bars or ~5% (whichever is smaller)
     report_interval = min(1000, max(1, total // 20))
+
+    # Per-signal timing
+    signal_times = np.zeros(len(signals), dtype=np.float64) if profile else None
 
     last_values = np.zeros(len(signals), dtype=np.float32)
     computed_idx = 0
@@ -263,10 +267,32 @@ def compute_signal_matrix(df, label: str = "", step: int = 1) -> np.ndarray:
                 print(f"  {tag}: {computed_idx * 100 // total}% ({computed_idx}/{total} bars)")
             window = df.iloc[i - LOOKBACK: i + 1]
             for j, sig in enumerate(signals):
-                last_values[j] = sig.safe_compute(window)
+                if profile:
+                    t0 = time.time()
+                    last_values[j] = sig.safe_compute(window)
+                    signal_times[j] += time.time() - t0
+                else:
+                    last_values[j] = sig.safe_compute(window)
             computed_idx += 1
         # Use last computed values (interpolation = hold previous value)
         matrix[i] = last_values
+
+    # Print profiling results
+    if profile and signal_times is not None:
+        total_time = np.sum(signal_times)
+        print(f"\n  {Fore.CYAN}Signal profiling ({label or 'all'}):{Style.RESET_ALL}")
+        print(f"  {'Signal':<20} {'Time (s)':>10} {'%':>8} {'ms/bar':>10}")
+        print(f"  {'-'*50}")
+        sorted_idx = np.argsort(signal_times)[::-1]
+        for j in sorted_idx:
+            sig_name = signals[j].name
+            sig_time = signal_times[j]
+            pct = sig_time / total_time * 100 if total_time > 0 else 0
+            ms_per_bar = sig_time / computed_idx * 1000 if computed_idx > 0 else 0
+            print(f"  {sig_name:<20} {sig_time:>10.2f} {pct:>7.1f}% {ms_per_bar:>9.2f}")
+        print(f"  {'-'*50}")
+        print(f"  {'TOTAL':<20} {total_time:>10.2f} {'100.0':>7}% {total_time/computed_idx*1000:>9.2f}")
+
     return matrix
 
 
@@ -461,8 +487,8 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     signal_start = time.time()
     # Use step=5 for training (5x faster, slight precision loss is OK for selection)
     mat_train = compute_signal_matrix(df_train, "Train ", step=5)
-    # Use step=1 for test (full precision for final evaluation)
-    mat_test = compute_signal_matrix(df_test, "Test  ", step=1)
+    # Use step=1 for test (full precision for final evaluation, profile to see bottlenecks)
+    mat_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
     signal_duration = time.time() - signal_start
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
