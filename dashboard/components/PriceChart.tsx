@@ -527,7 +527,7 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
             }}
           />
           {/* Price line */}
-          <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+          <Line type="monotone" dataKey="close" stroke="#6366f1" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} isAnimationActive={false} />
           {/* VWAP line */}
           {showVWAP && (
             <Line
@@ -538,34 +538,35 @@ export function PriceChart({ prices, trades, backendChannelInfo }: Props) {
               strokeOpacity={0.8}
               dot={false}
               connectNulls={true}
+              isAnimationActive={false}
             />
           )}
-          {/* Resistance line with glow */}
+          {/* Resistance line */}
           {showChannel && resistanceLine && (
             <Line
               type="linear"
               dataKey="resistance"
               stroke="#f43f5e"
-              strokeWidth={3}
-              strokeOpacity={0.85}
-              strokeDasharray="8 4"
+              strokeWidth={2}
+              strokeOpacity={0.9}
+              strokeDasharray="6 3"
               dot={false}
               connectNulls={true}
-              style={{ filter: "drop-shadow(0 0 4px rgba(244, 63, 94, 0.5))" }}
+              isAnimationActive={false}
             />
           )}
-          {/* Support line with glow */}
+          {/* Support line */}
           {showChannel && supportLine && (
             <Line
               type="linear"
               dataKey="support"
               stroke="#10b981"
-              strokeWidth={3}
-              strokeOpacity={0.85}
-              strokeDasharray="8 4"
+              strokeWidth={2}
+              strokeOpacity={0.9}
+              strokeDasharray="6 3"
               dot={false}
               connectNulls={true}
-              style={{ filter: "drop-shadow(0 0 4px rgba(16, 185, 129, 0.5))" }}
+              isAnimationActive={false}
             />
           )}
           {openTrades.map((t, i) => (
