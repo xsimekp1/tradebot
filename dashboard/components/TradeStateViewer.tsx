@@ -138,6 +138,21 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     return pair.close ? new Date(pair.close.ts).getTime() : entryTs;
   }, [pair.close, entryTs]);
 
+  // Calculate Y-axis domain from prices only (ignore nulls/zeros in S/R)
+  const yDomain = useMemo(() => {
+    const prices = chartData.map(d => d.price).filter(p => p > 0);
+    const supports = chartData.map(d => d.support).filter((s): s is number => s != null && s > 0);
+    const resistances = chartData.map(d => d.resistance).filter((r): r is number => r != null && r > 0);
+
+    const allValues = [...prices, ...supports, ...resistances];
+    if (allValues.length === 0) return [0, 100];
+
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const padding = (max - min) * 0.05;
+    return [min - padding, max + padding];
+  }, [chartData]);
+
   const TradePanel = ({ trade, label }: { trade: TradeEntry; label: string }) => (
     <div className="bg-[#0f1117] rounded-lg p-3 flex-1">
       <div className="flex items-center justify-between mb-2">
@@ -243,9 +258,8 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                 </linearGradient>
               </defs>
               <YAxis
-                domain={["auto", "auto"]}
+                domain={yDomain}
                 hide
-                padding={{ top: 10, bottom: 10 }}
               />
               <XAxis
                 dataKey="ts"
