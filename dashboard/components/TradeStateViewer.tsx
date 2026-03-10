@@ -203,7 +203,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       {/* Price chart with entry/exit/stop loss */}
       {chartData.length > 0 && (
         <div className="mb-4 bg-[#0f1117] rounded-lg p-2">
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
@@ -281,8 +281,8 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
             </AreaChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-1 text-[10px]">
-            <span className="text-emerald-400">● Entry ${openTrade.price.toFixed(2)}</span>
-            {pair.close && <span className="text-rose-400">● Exit ${pair.close.price.toFixed(2)}</span>}
+            <span className="text-emerald-400">● Entry ${openTrade.price.toFixed(2)} <span className="text-gray-500">({formatTime(openTrade.ts)})</span></span>
+            {pair.close && <span className="text-rose-400">● Exit ${pair.close.price.toFixed(2)} <span className="text-gray-500">({formatTime(pair.close.ts)})</span></span>}
             {stopLossPrice && <span className="text-amber-400">● SL ${stopLossPrice.toFixed(2)}</span>}
           </div>
         </div>
