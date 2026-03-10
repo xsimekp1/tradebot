@@ -68,15 +68,18 @@ def main():
             except Exception as exc:
                 print(f"{Fore.RED}Cycle error: {exc}{Style.RESET_ALL}")
 
-            # Sleep with trigger check every 10 seconds
-            print(f"\n  Sleeping {args.interval}s (checking for triggers every 10s)...")
-            sleep_remaining = args.interval
-            while sleep_remaining > 0:
-                time.sleep(min(10, sleep_remaining))
-                sleep_remaining -= 10
-                if check_and_clear_trigger():
-                    print(f"{Fore.GREEN}  Waking up early due to trigger!{Style.RESET_ALL}")
-                    break
+            # Sleep with trigger check every 10 seconds (skip if interval=0)
+            if args.interval > 0:
+                print(f"\n  Sleeping {args.interval}s (checking for triggers every 10s)...")
+                sleep_remaining = args.interval
+                while sleep_remaining > 0:
+                    time.sleep(min(10, sleep_remaining))
+                    sleep_remaining -= 10
+                    if check_and_clear_trigger():
+                        print(f"{Fore.GREEN}  Waking up early due to trigger!{Style.RESET_ALL}")
+                        break
+            else:
+                print(f"\n  Continuous mode - starting next cycle immediately...")
     else:
         # Single run - also check for trigger first
         check_and_clear_trigger()

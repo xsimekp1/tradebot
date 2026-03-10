@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, ResponsiveContainer,
+  ComposedChart, Area, Line, XAxis, YAxis, ResponsiveContainer,
   ReferenceLine, Tooltip,
 } from "recharts";
 
@@ -20,6 +20,8 @@ type TradeEntry = {
   resistance?: number;
   position_pct?: number;
   price_history?: number[];
+  support_history?: (number | null)[];
+  resistance_history?: (number | null)[];
 };
 
 export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
@@ -77,6 +79,8 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
   // Build chart data from price histories with estimated timestamps
   const chartData = useMemo(() => {
     const openHist = pair.open.price_history || [];
+    const openSupport = pair.open.support_history || [];
+    const openResistance = pair.open.resistance_history || [];
     const closeHist = pair.close?.price_history || [];
     const entryTime = new Date(pair.open.ts).getTime();
     const exitTime = pair.close ? new Date(pair.close.ts).getTime() : entryTime;
@@ -85,13 +89,20 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     const POINT_INTERVAL_MS = 10 * 60 * 1000;
 
     // Combine: entry context (before entry) + trade duration (entry to exit)
-    const combined: { idx: number; price: number; phase: "before" | "during"; ts: number }[] = [];
+    const combined: { idx: number; price: number; support?: number; resistance?: number; phase: "before" | "during"; ts: number }[] = [];
 
     // Add entry context - work backwards from entry time
     openHist.forEach((p, i) => {
       const pointsBeforeEntry = openHist.length - 1 - i;
       const ts = entryTime - (pointsBeforeEntry * POINT_INTERVAL_MS);
-      combined.push({ idx: i, price: p, phase: "before", ts });
+      combined.push({
+        idx: i,
+        price: p,
+        support: openSupport[i] ?? undefined,
+        resistance: openResistance[i] ?? undefined,
+        phase: "before",
+        ts
+      });
     });
 
     // Add trade duration prices (if we have close data)
@@ -224,7 +235,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
             {new Date(chartData[chartData.length - 1].ts).toLocaleDateString([], { month: "short", day: "numeric" })}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
@@ -288,24 +299,27 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                   strokeWidth={1}
                 />
               )}
-              {/* Support line */}
-              {openTrade.support && (
-                <ReferenceLine
-                  y={openTrade.support}
-                  stroke="#10b981"
-                  strokeOpacity={0.3}
-                  strokeWidth={1}
-                />
-              )}
-              {/* Resistance line */}
-              {openTrade.resistance && (
-                <ReferenceLine
-                  y={openTrade.resistance}
-                  stroke="#f43f5e"
-                  strokeOpacity={0.3}
-                  strokeWidth={1}
-                />
-              )}
+              {/* Support curve (green dashed) */}
+              <Line
+                type="monotone"
+                dataKey="support"
+                stroke="#10b981"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                dot={false}
+                connectNulls
+              />
+              {/* Resistance curve (red dashed) */}
+              <Line
+                type="monotone"
+                dataKey="resistance"
+                stroke="#f43f5e"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                dot={false}
+                connectNulls
+              />
+              {/* Price line */}
               <Area
                 type="monotone"
                 dataKey="price"
@@ -330,7 +344,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                   label={{ value: "▼", position: "top", fill: "#f43f5e", fontSize: 12 }}
                 />
               )}
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-1 text-[10px]">
             <span className="text-emerald-400">● Entry ${openTrade.price.toFixed(2)} <span className="text-gray-500">({formatTime(openTrade.ts)})</span></span>

@@ -14,7 +14,7 @@ from src.config import settings
 from src.signals import ALL_SIGNALS, make_signals
 
 LOOKBACK = 600  # Must be >= max signal lookback (channel uses 600)
-EVAL_WEEKS = 5  # Test all versions on 5 weeks of data (no train/test split)
+EVAL_DAYS = 60  # Test all versions on 60 days of 2m data (Yahoo max for 2m interval)
 SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 
@@ -259,7 +259,7 @@ def fetch_bars(symbol: str):
     import pandas as pd
     import httpx
 
-    total_days = EVAL_WEEKS * 7
+    total_days = EVAL_DAYS
     end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
     # Yahoo limits: 1m=7d, 2m=60d, 5m=60d
@@ -526,10 +526,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support"] = round(ci.get("support", 0), 2)
                         entry["resistance"] = round(ci.get("resistance", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history (every 5th bar = 36 points)
+                    # Add 3h price history with support/resistance curves (every 5th bar)
                     start_idx = max(0, i - 180)
-                    price_hist = [round(float(prices[j]), 2) for j in range(start_idx, i + 1, 5)]
-                    entry["price_history"] = price_hist
+                    indices = list(range(start_idx, i + 1, 5))
+                    entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
+                    if channel_infos:
+                        entry["support_history"] = [round(channel_infos[j].get("support", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["resistance_history"] = [round(channel_infos[j].get("resistance", 0), 2) if channel_infos[j] else None for j in indices]
                     trades_log.append(entry)
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
@@ -544,10 +547,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support"] = round(ci.get("support", 0), 2)
                         entry["resistance"] = round(ci.get("resistance", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history (every 5th bar = 36 points)
+                    # Add 3h price history with support/resistance curves (every 5th bar)
                     start_idx = max(0, i - 180)
-                    price_hist = [round(float(prices[j]), 2) for j in range(start_idx, i + 1, 5)]
-                    entry["price_history"] = price_hist
+                    indices = list(range(start_idx, i + 1, 5))
+                    entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
+                    if channel_infos:
+                        entry["support_history"] = [round(channel_infos[j].get("support", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["resistance_history"] = [round(channel_infos[j].get("resistance", 0), 2) if channel_infos[j] else None for j in indices]
                     trades_log.append(entry)
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
