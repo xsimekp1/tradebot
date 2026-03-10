@@ -528,8 +528,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support_slope"] = ci.get("support_slope", 0)
                         entry["resistance_slope"] = ci.get("resistance_slope", 0)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history (every 5th bar = 10 min intervals)
-                    start_idx = max(0, i - 180)
+                    # Add 20h price history (600 bars = channel lookback, every 5th bar = 120 points)
+                    start_idx = max(0, i - 600)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
                     entry["entry_idx"] = len(indices) - 1  # Index of entry point in price_history
@@ -549,8 +549,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support_slope"] = ci.get("support_slope", 0)
                         entry["resistance_slope"] = ci.get("resistance_slope", 0)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history (every 5th bar = 10 min intervals)
-                    start_idx = max(0, i - 180)
+                    # Add 20h price history (600 bars = channel lookback, every 5th bar = 120 points)
+                    start_idx = max(0, i - 600)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
                     entry["entry_idx"] = len(indices) - 1  # Index of entry point in price_history

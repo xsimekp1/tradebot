@@ -263,7 +263,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
             {" — "}
             {new Date(chartData[chartData.length - 1].ts).toLocaleDateString([], { month: "short", day: "numeric" })}
           </div>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={400}>
             <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
