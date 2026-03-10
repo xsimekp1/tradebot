@@ -113,6 +113,11 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     return beforeCount > 0 ? beforeCount - 1 : 0;
   }, [pair.open]);
 
+  // Find exit index (end of chart)
+  const exitIdx = useMemo(() => {
+    return chartData.length > 0 ? chartData.length - 1 : 0;
+  }, [chartData]);
+
   const TradePanel = ({ trade, label }: { trade: TradeEntry; label: string }) => (
     <div className="bg-[#0f1117] rounded-lg p-3 flex-1">
       <div className="flex items-center justify-between mb-2">
@@ -203,7 +208,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       {/* Price chart with entry/exit/stop loss */}
       {chartData.length > 0 && (
         <div className="mb-4 bg-[#0f1117] rounded-lg p-2">
-          <ResponsiveContainer width="100%" height={180}>
+          <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
@@ -278,6 +283,22 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                 fill="url(#priceGrad)"
                 dot={false}
               />
+              {/* Vertical entry marker */}
+              <ReferenceLine
+                x={entryIdx}
+                stroke="#10b981"
+                strokeWidth={2}
+                label={{ value: "▼", position: "top", fill: "#10b981", fontSize: 12 }}
+              />
+              {/* Vertical exit marker */}
+              {pair.close && (
+                <ReferenceLine
+                  x={exitIdx}
+                  stroke="#f43f5e"
+                  strokeWidth={2}
+                  label={{ value: "▼", position: "top", fill: "#f43f5e", fontSize: 12 }}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-1 text-[10px]">

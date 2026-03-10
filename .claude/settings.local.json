@@ -39,7 +39,12 @@
       "Bash(done)",
       "Bash(findstr:*)",
       "Bash(RAILWAY_MODE=evolve python:*)",
-      "Bash(cmd.exe /c \"tasklist | findstr python\")"
+      "Bash(cmd.exe /c \"tasklist | findstr python\")",
+      "Bash(cmd.exe /c \"taskkill /F /IM python.exe 2>&1 || echo No python processes\")",
+      "Bash(wmic process where \"name=''python.exe'' or name=''python3.exe''\" get processid,commandline)",
+      "Bash(cmd.exe /c \"wmic process where \"\"name=''python.exe''\"\" get processid,commandline\")",
+      "Bash(cmd.exe /c \"tasklist /FI \"\"IMAGENAME eq python.exe\"\" /V\")",
+      "Bash(powershell.exe:*)"
     ]
   }
 }
