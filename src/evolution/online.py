@@ -475,8 +475,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         close_entry = {"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                         if channel_infos and channel_infos[i]:
                             ci = channel_infos[i]
-                            close_entry["support"] = round(ci.get("support", 0), 2)
-                            close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                            close_entry["support"] = round(ci.get("support_price", 0), 2)
+                            close_entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                             close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                         # Add trade price history (entry to exit, every 5th bar)
                         entry_idx = position["idx"]
@@ -502,8 +502,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         close_entry = {"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                         if channel_infos and channel_infos[i]:
                             ci = channel_infos[i]
-                            close_entry["support"] = round(ci.get("support", 0), 2)
-                            close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                            close_entry["support"] = round(ci.get("support_price", 0), 2)
+                            close_entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                             close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                         # Add trade price history (entry to exit, every 5th bar)
                         entry_idx = position["idx"]
@@ -523,16 +523,16 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     entry = {"action": "open", "side": "long", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2), "score": round(score, 3), "spread": round(channel_spread, 2)}
                     if channel_infos and channel_infos[i]:
                         ci = channel_infos[i]
-                        entry["support"] = round(ci.get("support", 0), 2)
-                        entry["resistance"] = round(ci.get("resistance", 0), 2)
+                        entry["support"] = round(ci.get("support_price", 0), 2)
+                        entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                     # Add 3h price history with support/resistance curves (every 5th bar)
                     start_idx = max(0, i - 180)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
                     if channel_infos:
-                        entry["support_history"] = [round(channel_infos[j].get("support", 0), 2) if channel_infos[j] else None for j in indices]
-                        entry["resistance_history"] = [round(channel_infos[j].get("resistance", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["support_history"] = [round(channel_infos[j].get("support_price", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["resistance_history"] = [round(channel_infos[j].get("resistance_price", 0), 2) if channel_infos[j] else None for j in indices]
                     trades_log.append(entry)
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
@@ -544,16 +544,16 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     entry = {"action": "open", "side": "short", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2), "score": round(score, 3), "spread": round(channel_spread, 2)}
                     if channel_infos and channel_infos[i]:
                         ci = channel_infos[i]
-                        entry["support"] = round(ci.get("support", 0), 2)
-                        entry["resistance"] = round(ci.get("resistance", 0), 2)
+                        entry["support"] = round(ci.get("support_price", 0), 2)
+                        entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                     # Add 3h price history with support/resistance curves (every 5th bar)
                     start_idx = max(0, i - 180)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
                     if channel_infos:
-                        entry["support_history"] = [round(channel_infos[j].get("support", 0), 2) if channel_infos[j] else None for j in indices]
-                        entry["resistance_history"] = [round(channel_infos[j].get("resistance", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["support_history"] = [round(channel_infos[j].get("support_price", 0), 2) if channel_infos[j] else None for j in indices]
+                        entry["resistance_history"] = [round(channel_infos[j].get("resistance_price", 0), 2) if channel_infos[j] else None for j in indices]
                     trades_log.append(entry)
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
@@ -566,8 +566,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 close_entry = {"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                 if channel_infos and channel_infos[i]:
                     ci = channel_infos[i]
-                    close_entry["support"] = round(ci.get("support", 0), 2)
-                    close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                    close_entry["support"] = round(ci.get("support_price", 0), 2)
+                    close_entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                     close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                 # Add trade price history (entry to exit, every 5th bar)
                 entry_idx = position["idx"]
@@ -586,8 +586,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 close_entry = {"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                 if channel_infos and channel_infos[i]:
                     ci = channel_infos[i]
-                    close_entry["support"] = round(ci.get("support", 0), 2)
-                    close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                    close_entry["support"] = round(ci.get("support_price", 0), 2)
+                    close_entry["resistance"] = round(ci.get("resistance_price", 0), 2)
                     close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
                 # Add trade price history (entry to exit, every 5th bar)
                 entry_idx = position["idx"]
