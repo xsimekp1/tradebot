@@ -117,6 +117,18 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
             <p className="text-gray-300 font-medium">${trade.spread.toFixed(2)}</p>
           </div>
         )}
+        {trade.spread !== undefined && trade.action === "open" && (
+          <div>
+            <span className="text-gray-500">Stop Loss</span>
+            {(() => {
+              const stopDist = Math.max(trade.spread / 2, trade.price * 0.01);
+              const stopPrice = trade.side === "long"
+                ? trade.price - stopDist
+                : trade.price + stopDist;
+              return <p className="text-amber-400 font-medium">${stopPrice.toFixed(2)}</p>;
+            })()}
+          </div>
+        )}
         {trade.close_reason && (
           <div>
             <span className="text-gray-500">Exit Reason</span>
