@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import {
+  AreaChart, Area, XAxis, YAxis, ResponsiveContainer,
+  ReferenceLine, Tooltip,
+} from "recharts";
 
 type TradeEntry = {
   action: "open" | "close";
@@ -15,6 +19,7 @@ type TradeEntry = {
   support?: number;
   resistance?: number;
   position_pct?: number;
+  price_history?: number[];
 };
 
 export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
@@ -28,7 +33,6 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     for (const trade of trades) {
       if (trade.action === "open") {
         if (currentOpen) {
-          // Previous trade wasn't closed, add it anyway
           pairs.push({ open: currentOpen });
         }
         currentOpen = trade;
@@ -37,7 +41,6 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
         currentOpen = null;
       }
     }
-    // Add last open if not closed
     if (currentOpen) {
       pairs.push({ open: currentOpen });
     }
@@ -71,6 +74,45 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     return `${(val * 100).toFixed(1)}%`;
   };
 
+  // Build chart data from price histories
+  const chartData = useMemo(() => {
+    const openHist = pair.open.price_history || [];
+    const closeHist = pair.close?.price_history || [];
+
+    // Combine: entry context (before entry) + trade duration (entry to exit)
+    const combined: { idx: number; price: number; phase: "before" | "during" }[] = [];
+
+    // Add entry context (3h before entry)
+    openHist.forEach((p, i) => {
+      combined.push({ idx: i, price: p, phase: "before" });
+    });
+
+    // Add trade duration prices (if we have close data)
+    if (closeHist.length > 0) {
+      const offset = combined.length;
+      closeHist.forEach((p, i) => {
+        combined.push({ idx: offset + i, price: p, phase: "during" });
+      });
+    }
+
+    return combined;
+  }, [pair]);
+
+  // Calculate stop loss price
+  const stopLossPrice = useMemo(() => {
+    if (pair.open.spread === undefined) return null;
+    const stopDist = Math.max(pair.open.spread / 2, pair.open.price * 0.01);
+    return pair.open.side === "long"
+      ? pair.open.price - stopDist
+      : pair.open.price + stopDist;
+  }, [pair.open]);
+
+  // Find entry index in chart (where "before" phase ends)
+  const entryIdx = useMemo(() => {
+    const beforeCount = (pair.open.price_history || []).length;
+    return beforeCount > 0 ? beforeCount - 1 : 0;
+  }, [pair.open]);
+
   const TradePanel = ({ trade, label }: { trade: TradeEntry; label: string }) => (
     <div className="bg-[#0f1117] rounded-lg p-3 flex-1">
       <div className="flex items-center justify-between mb-2">
@@ -85,36 +127,12 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       <p className="text-xs text-gray-500">{formatTime(trade.ts)}</p>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        {trade.support !== undefined && (
-          <div>
-            <span className="text-gray-500">Support</span>
-            <p className="text-emerald-400 font-medium">${trade.support.toFixed(2)}</p>
-          </div>
-        )}
-        {trade.resistance !== undefined && (
-          <div>
-            <span className="text-gray-500">Resistance</span>
-            <p className="text-rose-400 font-medium">${trade.resistance.toFixed(2)}</p>
-          </div>
-        )}
-        {trade.position_pct !== undefined && (
-          <div>
-            <span className="text-gray-500">Channel Position</span>
-            <p className="text-indigo-400 font-medium">{formatPct(trade.position_pct)}</p>
-          </div>
-        )}
         {trade.score !== undefined && (
           <div>
             <span className="text-gray-500">Score</span>
             <p className={`font-medium ${trade.score >= 0 ? "text-green-400" : "text-red-400"}`}>
               {trade.score >= 0 ? "+" : ""}{trade.score.toFixed(3)}
             </p>
-          </div>
-        )}
-        {trade.spread !== undefined && (
-          <div>
-            <span className="text-gray-500">Channel Spread</span>
-            <p className="text-gray-300 font-medium">${trade.spread.toFixed(2)}</p>
           </div>
         )}
         {trade.spread !== undefined && trade.action === "open" && (
@@ -149,9 +167,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     </div>
   );
 
-  // Calculate channel visualization for open trade
   const openTrade = pair.open;
-  const hasChannel = openTrade.support !== undefined && openTrade.resistance !== undefined;
 
   return (
     <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
@@ -184,27 +200,91 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
         </div>
       </div>
 
-      {/* Channel visualization */}
-      {hasChannel && (
-        <div className="mb-4 relative h-8 bg-[#0f1117] rounded-lg overflow-hidden">
-          {/* Gradient from support to resistance */}
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-gray-500/10 to-rose-500/20" />
-          {/* Position marker */}
-          {openTrade.position_pct !== undefined && (
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-indigo-400"
-              style={{ left: `${openTrade.position_pct * 100}%` }}
-            >
-              <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-2 h-2 bg-indigo-400 rounded-full" />
-            </div>
-          )}
-          {/* Labels */}
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-emerald-400 font-medium">
-            ${openTrade.support?.toFixed(0)}
-          </span>
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-rose-400 font-medium">
-            ${openTrade.resistance?.toFixed(0)}
-          </span>
+      {/* Price chart with entry/exit/stop loss */}
+      {chartData.length > 0 && (
+        <div className="mb-4 bg-[#0f1117] rounded-lg p-2">
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <YAxis
+                domain={["auto", "auto"]}
+                hide
+                padding={{ top: 10, bottom: 10 }}
+              />
+              <XAxis dataKey="idx" hide />
+              <Tooltip
+                contentStyle={{
+                  background: "#1a1d27",
+                  border: "1px solid #2a2d3a",
+                  borderRadius: 6,
+                  fontSize: 11
+                }}
+                formatter={(v: number) => [`$${v.toFixed(2)}`, "Price"]}
+                labelFormatter={() => ""}
+              />
+              {/* Entry price line */}
+              <ReferenceLine
+                y={openTrade.price}
+                stroke="#10b981"
+                strokeDasharray="4 4"
+                strokeWidth={1.5}
+              />
+              {/* Exit price line */}
+              {pair.close && (
+                <ReferenceLine
+                  y={pair.close.price}
+                  stroke="#f43f5e"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                />
+              )}
+              {/* Stop loss line */}
+              {stopLossPrice && (
+                <ReferenceLine
+                  y={stopLossPrice}
+                  stroke="#f59e0b"
+                  strokeDasharray="2 2"
+                  strokeWidth={1}
+                />
+              )}
+              {/* Support line */}
+              {openTrade.support && (
+                <ReferenceLine
+                  y={openTrade.support}
+                  stroke="#10b981"
+                  strokeOpacity={0.3}
+                  strokeWidth={1}
+                />
+              )}
+              {/* Resistance line */}
+              {openTrade.resistance && (
+                <ReferenceLine
+                  y={openTrade.resistance}
+                  stroke="#f43f5e"
+                  strokeOpacity={0.3}
+                  strokeWidth={1}
+                />
+              )}
+              <Area
+                type="monotone"
+                dataKey="price"
+                stroke="#6366f1"
+                strokeWidth={1.5}
+                fill="url(#priceGrad)"
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+          <div className="flex justify-center gap-4 mt-1 text-[10px]">
+            <span className="text-emerald-400">● Entry ${openTrade.price.toFixed(2)}</span>
+            {pair.close && <span className="text-rose-400">● Exit ${pair.close.price.toFixed(2)}</span>}
+            {stopLossPrice && <span className="text-amber-400">● SL ${stopLossPrice.toFixed(2)}</span>}
+          </div>
         </div>
       )}
 

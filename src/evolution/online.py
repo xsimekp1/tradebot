@@ -480,6 +480,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                             close_entry["support"] = round(ci.get("support", 0), 2)
                             close_entry["resistance"] = round(ci.get("resistance", 0), 2)
                             close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                        # Add trade price history (entry to exit, every 5th bar)
+                        entry_idx = position["idx"]
+                        trade_hist = [round(float(prices[j]), 2) for j in range(entry_idx, i + 1, 5)]
+                        close_entry["price_history"] = trade_hist
                         trades_log.append(close_entry)
                     position = None
             elif position["side"] == "short":
@@ -503,6 +507,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                             close_entry["support"] = round(ci.get("support", 0), 2)
                             close_entry["resistance"] = round(ci.get("resistance", 0), 2)
                             close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                        # Add trade price history (entry to exit, every 5th bar)
+                        entry_idx = position["idx"]
+                        trade_hist = [round(float(prices[j]), 2) for j in range(entry_idx, i + 1, 5)]
+                        close_entry["price_history"] = trade_hist
                         trades_log.append(close_entry)
                     position = None
 
@@ -520,6 +528,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support"] = round(ci.get("support", 0), 2)
                         entry["resistance"] = round(ci.get("resistance", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                    # Add 3h price history (every 5th bar = 36 points)
+                    start_idx = max(0, i - 180)
+                    price_hist = [round(float(prices[j]), 2) for j in range(start_idx, i + 1, 5)]
+                    entry["price_history"] = price_hist
                     trades_log.append(entry)
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
@@ -534,6 +546,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         entry["support"] = round(ci.get("support", 0), 2)
                         entry["resistance"] = round(ci.get("resistance", 0), 2)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                    # Add 3h price history (every 5th bar = 36 points)
+                    start_idx = max(0, i - 180)
+                    price_hist = [round(float(prices[j]), 2) for j in range(start_idx, i + 1, 5)]
+                    entry["price_history"] = price_hist
                     trades_log.append(entry)
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
@@ -549,6 +565,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     close_entry["support"] = round(ci.get("support", 0), 2)
                     close_entry["resistance"] = round(ci.get("resistance", 0), 2)
                     close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                # Add trade price history (entry to exit, every 5th bar)
+                entry_idx = position["idx"]
+                trade_hist = [round(float(prices[j]), 2) for j in range(entry_idx, i + 1, 5)]
+                close_entry["price_history"] = trade_hist
                 trades_log.append(close_entry)
             position = None
         elif position["side"] == "short" and score > long_thr:
@@ -565,6 +585,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     close_entry["support"] = round(ci.get("support", 0), 2)
                     close_entry["resistance"] = round(ci.get("resistance", 0), 2)
                     close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                # Add trade price history (entry to exit, every 5th bar)
+                entry_idx = position["idx"]
+                trade_hist = [round(float(prices[j]), 2) for j in range(entry_idx, i + 1, 5)]
+                close_entry["price_history"] = trade_hist
                 trades_log.append(close_entry)
             position = None
 
