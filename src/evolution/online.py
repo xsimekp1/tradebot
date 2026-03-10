@@ -670,7 +670,7 @@ def mutate_entry_bias(entry_bias: float, sigma: float) -> float:
 
 # ── Evolution cycle ───────────────────────────────────────────────────────────
 
-def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
+def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
     current_weights, version, current_threshold, current_entry_bias = load_active_weights()
 
     # Integrate any new signals added since last saved version (using DEFAULT_WEIGHTS)
