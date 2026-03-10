@@ -110,7 +110,7 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
             Best Backtest — OOS (v{version})
           </h2>
-          <p className="text-xs text-gray-600 mt-0.5">14-day out-of-sample simulation · ▲ open long &nbsp; ▼ close &nbsp; ✕ stop loss</p>
+          <p className="text-xs text-gray-600 mt-0.5">14-day out-of-sample simulation · <span className="text-green-400">▲</span> open long &nbsp; <span className="text-red-400">▼</span> open short &nbsp; ▼ close &nbsp; ✕ stop loss</p>
         </div>
         <div className="flex gap-3 text-xs text-right">
           <div>
