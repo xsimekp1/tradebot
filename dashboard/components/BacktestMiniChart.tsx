@@ -119,22 +119,6 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
               {stats.return_pct >= 0 ? "+" : ""}{stats.return_pct.toFixed(2)}%
             </div>
           </div>
-          {stats.buyhold_return !== undefined && (
-            <div>
-              <div className="text-gray-500 uppercase text-[10px]">Buy&Hold</div>
-              <div className={`font-bold ${stats.buyhold_return >= 0 ? "text-blue-400" : "text-blue-300"}`}>
-                {stats.buyhold_return >= 0 ? "+" : ""}{stats.buyhold_return.toFixed(2)}%
-              </div>
-            </div>
-          )}
-          {stats.beats_buyhold !== undefined && (
-            <div>
-              <div className="text-gray-500 uppercase text-[10px]">vs Market</div>
-              <div className={`font-bold ${stats.beats_buyhold ? "text-green-400" : "text-red-400"}`}>
-                {stats.beats_buyhold ? "BEATING" : "LOSING"}
-              </div>
-            </div>
-          )}
           <div>
             <div className="text-gray-500 uppercase text-[10px]">Sharpe</div>
             <div className="text-white font-bold">{stats.sharpe.toFixed(2)}</div>
