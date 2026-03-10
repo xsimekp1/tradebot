@@ -30,6 +30,7 @@ class IBKRBroker(BaseBroker):
     def __init__(self):
         self._ib = None
         self._connected = False
+        self._account_req_id = None  # Track account summary subscription
 
     @property
     def name(self) -> str:
@@ -99,8 +100,14 @@ class IBKRBroker(BaseBroker):
     async def get_account(self) -> AccountInfo:
         ib = self._get_ib()
 
-        # Request account summary
+        # Use cached account summary if available
         account_values = ib.accountSummary()
+
+        # If no data yet, request subscription once and wait
+        if not account_values and self._account_req_id is None:
+            self._account_req_id = ib.reqAccountSummary()  # Returns subscription ID
+            await asyncio.sleep(1.0)  # Wait for data to arrive
+            account_values = ib.accountSummary()
 
         equity = 0.0
         cash = 0.0

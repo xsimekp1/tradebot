@@ -10,7 +10,7 @@ export async function GET() {
       SELECT id, version, weights, performance, is_active, created_at
       FROM signal_weights
       ORDER BY created_at DESC
-      LIMIT 20
+      LIMIT 50
     `;
     // Strip _threshold from weights dict (it belongs in performance)
     const clean = rows.map((r) => ({

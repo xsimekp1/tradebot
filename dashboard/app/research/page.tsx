@@ -8,6 +8,7 @@ import { ScoreGauge } from "@/components/ScoreGauge";
 import { SignalEvolutionGrid } from "@/components/SignalEvolutionGrid";
 import { ThresholdHistoryChart } from "@/components/ThresholdHistoryChart";
 import { BacktestMiniChart } from "@/components/BacktestMiniChart";
+import { TradeStateViewer } from "@/components/TradeStateViewer";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -270,6 +271,11 @@ export default function ResearchPage() {
           stats={backtestData.stats}
           version={backtestData.version}
         />
+      )}
+
+      {/* Trade state viewer */}
+      {backtestData?.trades && backtestData.trades.length > 0 && (
+        <TradeStateViewer trades={backtestData.trades} />
       )}
 
     </div>

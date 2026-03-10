@@ -21,13 +21,13 @@ SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 
-DEFAULT_THRESHOLD = 0.15
-THRESHOLD_MIN = 0.05
-THRESHOLD_MAX = 0.40
+DEFAULT_THRESHOLD = 0.25  # Increased for more selective entries
+THRESHOLD_MIN = 0.15
+THRESHOLD_MAX = 0.35  # Prevent going too high (no trading)
 
-DEFAULT_ENTRY_BIAS = 0.03  # Start with small bias to compensate for fees
+DEFAULT_ENTRY_BIAS = 0.10  # Additional buffer for entry (adds to threshold)
 ENTRY_BIAS_MIN = 0.0
-ENTRY_BIAS_MAX = 0.15
+ENTRY_BIAS_MAX = 0.25
 
 
 def _db_url() -> str:
@@ -58,6 +58,30 @@ def update_evolution_progress(phase: str, progress_pct: int, message: str = ""):
             conn.commit()
     except Exception as e:
         print(f"[evolution] Progress update failed: {e}")
+
+
+def save_channel_info(channel_info: dict) -> None:
+    """Save channel info to bot_cache for frontend display (sync version for evolution)."""
+    import psycopg
+    try:
+        # Convert numpy types to native Python types
+        clean_info = {}
+        for k, v in channel_info.items():
+            if hasattr(v, 'item'):
+                clean_info[k] = v.item()
+            else:
+                clean_info[k] = v
+
+        with psycopg.connect(_db_url()) as conn:
+            conn.execute(
+                """INSERT INTO bot_cache (key, value, updated_at)
+                   VALUES ('channel_info', %s::jsonb, NOW())
+                   ON CONFLICT (key) DO UPDATE SET value = %s::jsonb, updated_at = NOW()""",
+                (json.dumps(clean_info), json.dumps(clean_info))
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"[evolution] Channel info save failed: {e}")
 
 
 def load_active_weights() -> tuple[dict, int, float, float]:
@@ -169,10 +193,25 @@ def log_evolution_result(
         print(f"{Fore.YELLOW}Evolution result logging failed: {e}{Style.RESET_ALL}")
 
 
+def _convert_numpy_types(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_numpy_types(v) for v in obj]
+    elif hasattr(obj, 'item'):  # numpy scalar
+        return obj.item()
+    elif hasattr(obj, 'tolist'):  # numpy array
+        return obj.tolist()
+    return obj
+
+
 def save_weights(weights: dict, version: int, performance: dict, threshold: float) -> None:
     import psycopg
-    payload = {k: round(v, 4) for k, v in weights.items()}
-    performance["threshold"] = round(threshold, 4)  # store in performance, not weights
+    payload = {k: round(float(v), 4) for k, v in weights.items()}  # Ensure float
+    performance["threshold"] = round(float(threshold), 4)  # store in performance, not weights
+    # Convert numpy types to native Python types
+    clean_perf = _convert_numpy_types(performance)
     with psycopg.connect(_db_url()) as conn:
         conn.execute("UPDATE signal_weights SET is_active=FALSE WHERE is_active=TRUE")
         conn.execute(
@@ -184,7 +223,7 @@ def save_weights(weights: dict, version: int, performance: dict, threshold: floa
                 str(uuid.uuid4()),
                 version,
                 json.dumps(payload),
-                json.dumps(performance),
+                json.dumps(clean_perf),
                 datetime.now(timezone.utc),
             ),
         )
@@ -195,6 +234,8 @@ def save_weights(weights: dict, version: int, performance: dict, threshold: floa
 def update_performance(version: int, performance: dict) -> None:
     """Update performance metrics of the active model (without changing weights/version)."""
     import psycopg
+    # Convert numpy types to native Python types
+    clean_perf = _convert_numpy_types(performance)
     with psycopg.connect(_db_url()) as conn:
         conn.execute(
             """
@@ -202,7 +243,7 @@ def update_performance(version: int, performance: dict) -> None:
             SET performance = %s::jsonb
             WHERE version = %s AND is_active = TRUE
             """,
-            (json.dumps(performance), version),
+            (json.dumps(clean_perf), version),
         )
         conn.commit()
     print(f"  {Fore.CYAN}[updated v{version} performance metrics]{Style.RESET_ALL}")
@@ -274,9 +315,9 @@ def fetch_bars(symbol: str):
 
 # ── Signal matrix ─────────────────────────────────────────────────────────────
 
-def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = False) -> tuple[np.ndarray, np.ndarray]:
+def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = False) -> tuple[np.ndarray, np.ndarray, list]:
     """
-    Compute signal matrix and channel spreads for all bars.
+    Compute signal matrix and channel info for all bars.
 
     Args:
         step: Compute signals every N bars (interpolate in between).
@@ -284,7 +325,7 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
         profile: If True, track and print per-signal timing at the end.
 
     Returns:
-        (signal_matrix, channel_spreads) - matrix of signal values and array of channel spreads
+        (signal_matrix, channel_spreads, channel_infos) - matrix of signal values, array of spreads, list of channel info dicts
     """
     from src.signals.channel import ChannelPositionSignal
 
@@ -292,6 +333,7 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
     n = len(df)
     matrix = np.zeros((n, len(signals)), dtype=np.float32)
     channel_spreads = np.zeros(n, dtype=np.float32)  # Track channel spread per bar
+    channel_infos: list = [None] * n  # Full channel info per bar
     total = (n - LOOKBACK) // step
     tag = f"{label}signals" if label else "signals"
     # Report progress every 1000 bars or ~5% (whichever is smaller)
@@ -309,6 +351,7 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
 
     last_values = np.zeros(len(signals), dtype=np.float32)
     last_spread = 0.0
+    last_channel_info = None
     computed_idx = 0
     for idx, i in enumerate(range(LOOKBACK, n)):
         if idx % step == 0:
@@ -324,17 +367,21 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
                 else:
                     last_values[j] = sig.safe_compute(window)
 
-            # Extract channel spread from channel_position signal
+            # Extract channel info from channel_position signal
             if channel_sig_idx is not None:
                 ch_sig = signals[channel_sig_idx]
                 if hasattr(ch_sig, 'last_channel_info') and ch_sig.last_channel_info:
                     ci = ch_sig.last_channel_info
                     last_spread = ci.get('resistance_price', 0) - ci.get('support_price', 0)
+                    last_channel_info = ci.copy()
+                else:
+                    last_channel_info = None
 
             computed_idx += 1
         # Use last computed values (interpolation = hold previous value)
         matrix[i] = last_values
         channel_spreads[i] = last_spread
+        channel_infos[i] = last_channel_info
 
     # Print profiling results
     if profile and signal_times is not None:
@@ -352,7 +399,7 @@ def compute_signal_matrix(df, label: str = "", step: int = 1, profile: bool = Fa
         print(f"  {'-'*50}")
         print(f"  {'TOTAL':<20} {total_time:>10.2f} {'100.0':>7}% {total_time/computed_idx*1000:>9.2f}")
 
-    return matrix, channel_spreads
+    return matrix, channel_spreads, channel_infos
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
@@ -361,7 +408,8 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
              channel_spreads: np.ndarray,
              long_thr: float = DEFAULT_THRESHOLD, short_thr: float = -DEFAULT_THRESHOLD,
              allow_short: bool = True, record_trades: bool = False,
-             fee_pct: float = 0.0025, entry_bias: float = 0.0) -> dict:
+             fee_pct: float = 0.0025, entry_bias: float = 0.0,
+             channel_infos: list = None) -> dict:
     """
     Simulate trading strategy with transaction costs and channel-based stop loss.
 
@@ -374,6 +422,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     Positive value = more conservative (harder to enter trades).
                     E.g., entry_bias=0.05 means need score > 0.20 instead of 0.15.
                     Does NOT affect exit thresholds - easy to exit when signal reverses.
+        channel_infos: List of channel info dicts per bar (for trade logging).
     """
     wsum = np.sum(np.abs(weights_arr))
     scores = (mat @ weights_arr) / wsum if wsum > 0 else np.zeros(len(df))
@@ -389,6 +438,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     trades: list[float] = []
     trades_log: list[dict] = []
     equity = np.full(len(df), capital, dtype=np.float64)
+    positions = np.zeros(len(df), dtype=np.int8)  # 0=flat, 1=long, -1=short
     total_fees = 0.0
 
     # Entry thresholds are higher (more conservative) due to entry_bias
@@ -402,8 +452,10 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         score = scores[i]
 
         # Dynamic stop loss = half of channel spread (resistance - support)
+        # With minimum of 1% of price to avoid getting stopped by normal noise
         channel_spread = channel_spreads[i] if channel_spreads[i] > 0 else 5.0  # Fallback $5
-        stop_distance = channel_spread / 2  # Half channel spread
+        min_stop = price * 0.01  # Minimum 1% of price
+        stop_distance = max(channel_spread / 2, min_stop)  # Half channel spread, but at least 1%
 
         # Check trailing stop loss first (before signal-based exit)
         if position is not None and stop_distance > 0:
@@ -422,7 +474,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     total_fees += exit_fee
                     trades.append(pnl)
                     if record_trades:
-                        trades_log.append({"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                        close_entry = {"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                        if channel_infos and channel_infos[i]:
+                            ci = channel_infos[i]
+                            close_entry["support"] = round(ci.get("support", 0), 2)
+                            close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                            close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                        trades_log.append(close_entry)
                     position = None
             elif position["side"] == "short":
                 # Update lowest price (trailing)
@@ -439,7 +497,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     total_fees += exit_fee
                     trades.append(pnl)
                     if record_trades:
-                        trades_log.append({"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                        close_entry = {"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                        if channel_infos and channel_infos[i]:
+                            ci = channel_infos[i]
+                            close_entry["support"] = round(ci.get("support", 0), 2)
+                            close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                            close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                        trades_log.append(close_entry)
                     position = None
 
         if position is None:
@@ -450,7 +514,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 total_fees += entry_fee
                 position = {"side": "long", "entry": price, "qty": qty, "idx": i, "highest": price}
                 if record_trades:
-                    trades_log.append({"action": "open", "side": "long", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
+                    entry = {"action": "open", "side": "long", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2), "score": round(score, 3), "spread": round(channel_spread, 2)}
+                    if channel_infos and channel_infos[i]:
+                        ci = channel_infos[i]
+                        entry["support"] = round(ci.get("support", 0), 2)
+                        entry["resistance"] = round(ci.get("resistance", 0), 2)
+                        entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                    trades_log.append(entry)
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
                 qty = pos_size / price
@@ -458,7 +528,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                 total_fees += entry_fee
                 position = {"side": "short", "entry": price, "qty": qty, "idx": i, "lowest": price}
                 if record_trades:
-                    trades_log.append({"action": "open", "side": "short", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2)})
+                    entry = {"action": "open", "side": "short", "price": round(price, 2), "ts": timestamps[i], "fee": round(entry_fee, 2), "score": round(score, 3), "spread": round(channel_spread, 2)}
+                    if channel_infos and channel_infos[i]:
+                        ci = channel_infos[i]
+                        entry["support"] = round(ci.get("support", 0), 2)
+                        entry["resistance"] = round(ci.get("resistance", 0), 2)
+                        entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                    trades_log.append(entry)
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
             exit_fee = exit_value * fee_pct
@@ -467,7 +543,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                close_entry = {"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                if channel_infos and channel_infos[i]:
+                    ci = channel_infos[i]
+                    close_entry["support"] = round(ci.get("support", 0), 2)
+                    close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                    close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                trades_log.append(close_entry)
             position = None
         elif position["side"] == "short" and score > long_thr:
             exit_cost = position["qty"] * price
@@ -477,19 +559,28 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                trades_log.append({"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)})
+                close_entry = {"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                if channel_infos and channel_infos[i]:
+                    ci = channel_infos[i]
+                    close_entry["support"] = round(ci.get("support", 0), 2)
+                    close_entry["resistance"] = round(ci.get("resistance", 0), 2)
+                    close_entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
+                trades_log.append(close_entry)
             position = None
 
         if position:
             if position["side"] == "long":
                 pv = position["qty"] * price  # value of shares owned
+                positions[i] = 1
             else:
                 # Short: we received cash from sale, now owe shares
                 # pv = negative of current liability (cost to buy back)
                 pv = -position["qty"] * price
+                positions[i] = -1
             equity[i] = cash + pv
         else:
             equity[i] = cash
+            positions[i] = 0
 
     if position:
         p = prices[-1]
@@ -518,6 +609,13 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
     end_price = prices[-1]
     buyhold_return = (end_price - start_price) / start_price * 100 if start_price > 0 else 0.0
 
+    # Time in position stats
+    pos_slice = positions[LOOKBACK:]
+    total_bars = len(pos_slice)
+    time_long_pct = (pos_slice == 1).sum() / total_bars * 100 if total_bars > 0 else 0.0
+    time_short_pct = (pos_slice == -1).sum() / total_bars * 100 if total_bars > 0 else 0.0
+    time_flat_pct = (pos_slice == 0).sum() / total_bars * 100 if total_bars > 0 else 0.0
+
     result = {
         "return_pct": round(ret, 4),
         "sharpe": round(sharpe, 4),
@@ -529,6 +627,9 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         "entry_bias": round(entry_bias, 4),
         "buyhold_return": round(float(buyhold_return), 4),
         "beats_buyhold": bool(ret > buyhold_return),
+        "time_long_pct": round(time_long_pct, 1),
+        "time_short_pct": round(time_short_pct, 1),
+        "time_flat_pct": round(time_flat_pct, 1),
     }
 
     if record_trades:
@@ -536,7 +637,11 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
         step = max(1, len(eq) // 300)
         ts_slice = timestamps[LOOKBACK::step]
         eq_slice = eq[::step].tolist()
-        result["equity_curve"] = [{"ts": ts_slice[i], "eq": round(eq_slice[i], 2)} for i in range(min(len(ts_slice), len(eq_slice)))]
+        pos_slice_sampled = pos_slice[::step].tolist()
+        result["equity_curve"] = [
+            {"ts": ts_slice[i], "eq": round(eq_slice[i], 2), "pos": int(pos_slice_sampled[i])}
+            for i in range(min(len(ts_slice), len(eq_slice), len(pos_slice_sampled)))
+        ]
         result["trades_log"] = trades_log
 
     return result
@@ -599,10 +704,10 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     print("  Computing signal matrices...")
     signal_start = time.time()
     # Use step=5 for training (5x faster, slight precision loss is OK for selection)
-    mat_train, spreads_train = compute_signal_matrix(df_train, "Train ", step=5)
+    mat_train, spreads_train, _ = compute_signal_matrix(df_train, "Train ", step=5)
     update_evolution_progress("computing_signals", 40, "Train signals done, computing test signals...")
     # Use step=1 for test (full precision for final evaluation, profile to see bottlenecks)
-    mat_test, spreads_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
+    mat_test, spreads_test, channel_infos_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
     signal_duration = time.time() - signal_start
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
@@ -645,7 +750,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
         print(f"\n  {Fore.YELLOW}Current strategy is best — keeping v{version}.{Style.RESET_ALL}")
         # Update performance metrics with current test results (includes fees now)
         is_stats = simulate(df_train, mat_train, current_arr, spreads_train, current_threshold, -current_threshold, entry_bias=current_entry_bias)
-        oos_full = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias)
+        oos_full = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias, channel_infos=channel_infos_test)
         update_performance(version, {
             "in_sample": is_stats,
             "out_of_sample": oos_full,
@@ -670,7 +775,7 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.05) -> None:
     best_thr = best["threshold"]
     best_bias = best["entry_bias"]
     is_stats = simulate(df_train, mat_train, best["arr"], spreads_train, best_thr, -best_thr, entry_bias=best_bias)
-    best_oos_full = simulate(df_test, mat_test, best["arr"], spreads_test, best_thr, -best_thr, record_trades=True, entry_bias=best_bias)
+    best_oos_full = simulate(df_test, mat_test, best["arr"], spreads_test, best_thr, -best_thr, record_trades=True, entry_bias=best_bias, channel_infos=channel_infos_test)
     new_version = version + 1
     save_weights(
         best["weights"],

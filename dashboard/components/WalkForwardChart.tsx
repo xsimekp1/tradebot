@@ -21,14 +21,14 @@ export function WalkForwardChart({ rows }: { rows: WeightRow[] }) {
   const dataRows = useMemo(() => {
     if (!rows.length) return [];
 
-    // Filter to last 2 hours and sort by time ascending
-    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    // Filter to last 24 hours and sort by time ascending
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
     const recentRows = rows
-      .filter((r) => new Date(r.created_at).getTime() > twoHoursAgo)
+      .filter((r) => new Date(r.created_at).getTime() > oneDayAgo)
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-    // If no data in last 2 hours, show all data (up to 20 points)
-    return recentRows.length > 0 ? recentRows : rows.slice(0, 20).reverse();
+    // If no data in last 24 hours, show all data (up to 50 points)
+    return recentRows.length > 0 ? recentRows : rows.slice(0, 50).reverse();
   }, [rows]);
 
   const data = useMemo(() => {
@@ -49,7 +49,7 @@ export function WalkForwardChart({ rows }: { rows: WeightRow[] }) {
   return (
     <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
       <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-3">
-        Evolution Performance (last 2 hours)
+        Evolution Performance (last 24 hours)
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>

@@ -38,7 +38,8 @@
       "Bash(echo:*)",
       "Bash(done)",
       "Bash(findstr:*)",
-      "Bash(RAILWAY_MODE=evolve python:*)"
+      "Bash(RAILWAY_MODE=evolve python:*)",
+      "Bash(cmd.exe /c \"tasklist | findstr python\")"
     ]
   }
 }

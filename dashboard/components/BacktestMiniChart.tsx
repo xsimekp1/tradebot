@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, ReferenceDot, CartesianGrid,
 } from "recharts";
 
-type EquityPoint = { ts: string; eq: number };
+type EquityPoint = { ts: string; eq: number; pos?: number };  // pos: 0=flat, 1=long, -1=short
 type TradeEvent = {
   action?: "open" | "close";
   side?: "long" | "short";
@@ -27,6 +27,9 @@ type Props = {
     max_dd: number;
     buyhold_return?: number;
     beats_buyhold?: boolean;
+    time_long_pct?: number;
+    time_short_pct?: number;
+    time_flat_pct?: number;
   };
   version: number;
 };
@@ -148,11 +151,20 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
             <div className="text-gray-500 uppercase text-[10px]">Max DD</div>
             <div className="text-red-400 font-bold">{stats.max_dd.toFixed(2)}%</div>
           </div>
+          {stats.time_long_pct !== undefined && (
+            <div>
+              <div className="text-gray-500 uppercase text-[10px]">In Position</div>
+              <div className="flex gap-1 text-[10px] font-bold">
+                <span className="text-green-400">{stats.time_long_pct.toFixed(0)}%L</span>
+                <span className="text-red-400">{stats.time_short_pct?.toFixed(0)}%S</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={equityCurve} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+        <ComposedChart data={equityCurve} margin={{ top: 4, right: 8, left: 0, bottom: 16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
           <XAxis
             dataKey="ts"
@@ -211,6 +223,32 @@ export function BacktestMiniChart({ equityCurve, trades, stats, version }: Props
           })}
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Position band - shows when we're long (green), short (red), or flat (gray) */}
+      {equityCurve.some(p => p.pos !== undefined) && (
+        <div className="mt-1 mx-12 h-2 flex rounded-sm overflow-hidden" title="Position: green=long, red=short, gray=flat">
+          {equityCurve.map((p, i) => {
+            const pos = p.pos ?? 0;
+            const color = pos === 1 ? "#4ade80" : pos === -1 ? "#f87171" : "#374151";
+            // Only render if position changed or first/last element to reduce DOM nodes
+            const prevPos = i > 0 ? (equityCurve[i - 1].pos ?? 0) : null;
+            if (i > 0 && i < equityCurve.length - 1 && pos === prevPos) return null;
+            // Calculate width as percentage of consecutive same-position bars
+            let count = 1;
+            for (let j = i + 1; j < equityCurve.length && (equityCurve[j].pos ?? 0) === pos; j++) {
+              count++;
+            }
+            const widthPct = (count / equityCurve.length) * 100;
+            return (
+              <div
+                key={i}
+                style={{ backgroundColor: color, width: `${widthPct}%` }}
+                className="h-full"
+              />
+            );
+          }).filter(Boolean)}
+        </div>
+      )}
     </div>
   );
 }
