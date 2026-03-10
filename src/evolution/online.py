@@ -14,8 +14,7 @@ from src.config import settings
 from src.signals import ALL_SIGNALS, make_signals
 
 LOOKBACK = 600  # Must be >= max signal lookback (channel uses 600)
-TRAIN_WEEKS = 4
-TEST_DAYS = 14  # 14 days = ~10 trading days, minus 600 lookback = ~7 days actual test
+EVAL_WEEKS = 5  # Test all versions on 5 weeks of data (no train/test split)
 SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 
@@ -252,11 +251,15 @@ def update_performance(version: int, performance: dict) -> None:
 # ── Data ──────────────────────────────────────────────────────────────────────
 
 def fetch_bars(symbol: str):
-    """Fetch historical bars from Yahoo Finance (free, no API key)."""
+    """Fetch historical bars from Yahoo Finance (free, no API key).
+
+    Returns single dataframe with 5 weeks of data (no train/test split).
+    All model versions are evaluated on the same data period.
+    """
     import pandas as pd
     import httpx
 
-    total_days = TRAIN_WEEKS * 7 + TEST_DAYS
+    total_days = EVAL_WEEKS * 7
     end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
     # Yahoo limits: 1m=7d, 2m=60d, 5m=60d
@@ -301,16 +304,11 @@ def fetch_bars(symbol: str):
     except Exception as e:
         raise RuntimeError(f"Yahoo fetch failed: {e}")
 
-    test_cutoff = end - timedelta(days=TEST_DAYS)
-    df_train = df[df.index < test_cutoff]
-    df_test = df[df.index >= test_cutoff]
+    if len(df) < LOOKBACK + 100:
+        raise RuntimeError(f"Not enough data: {len(df)} bars (need {LOOKBACK + 100})")
 
-    if len(df_train) < 100:
-        raise RuntimeError(f"Not enough training data: {len(df_train)} bars")
-
-    print(f"  Train: {len(df_train):,} bars ({df_train.index[0].strftime('%m-%d')} to {df_train.index[-1].strftime('%m-%d')})")
-    print(f"  Test:  {len(df_test):,} bars  ({df_test.index[0].strftime('%m-%d')} to {df_test.index[-1].strftime('%m-%d')})")
-    return df_train, df_test
+    print(f"  Data: {len(df):,} bars ({df.index[0].strftime('%m-%d')} to {df.index[-1].strftime('%m-%d')})")
+    return df
 
 
 # ── Signal matrix ─────────────────────────────────────────────────────────────
@@ -695,6 +693,7 @@ def mutate_entry_bias(entry_bias: float, sigma: float) -> float:
 # ── Evolution cycle ───────────────────────────────────────────────────────────
 
 def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
+    """Evolution cycle: test current + mutations on same 5-week period (no train/test split)."""
     current_weights, version, current_threshold, current_entry_bias = load_active_weights()
 
     # Integrate any new signals added since last saved version (using DEFAULT_WEIGHTS)
@@ -718,34 +717,31 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
     print("  Current: " + "  ".join(f"{k}={current_weights[k]:.3f}" for k in top if current_weights[k] > 0.01))
 
     update_evolution_progress("fetching", 5, f"Fetching {symbol} historical data...")
-    df_train, df_test = fetch_bars(symbol)
+    df = fetch_bars(symbol)  # Single dataframe, no split
 
-    if len(df_train) < LOOKBACK + 50 or len(df_test) < LOOKBACK + 10:
+    if len(df) < LOOKBACK + 100:
         print(f"{Fore.RED}Not enough bars to evolve.{Style.RESET_ALL}")
         return
 
-    update_evolution_progress("computing_signals", 15, "Computing signal matrices...")
-    print("  Computing signal matrices...")
+    update_evolution_progress("computing_signals", 15, "Computing signal matrix...")
+    print("  Computing signal matrix...")
     signal_start = time.time()
-    # Use step=5 for training (5x faster, slight precision loss is OK for selection)
-    mat_train, spreads_train, _ = compute_signal_matrix(df_train, "Train ", step=5)
-    update_evolution_progress("computing_signals", 40, "Train signals done, computing test signals...")
-    # Use step=1 for test (full precision for final evaluation, profile to see bottlenecks)
-    mat_test, spreads_test, channel_infos_test = compute_signal_matrix(df_test, "Test  ", step=1, profile=True)
+    # Compute signals on full data, step=1 for full precision, profile to see bottlenecks
+    mat, spreads, channel_infos = compute_signal_matrix(df, "Eval  ", step=1, profile=True)
     signal_duration = time.time() - signal_start
     print(f"  {Fore.CYAN}Signal computation took {signal_duration:.1f}s{Style.RESET_ALL}")
 
     # Show channel spread stats
-    valid_spreads = spreads_test[spreads_test > 0]
+    valid_spreads = spreads[spreads > 0]
     if len(valid_spreads) > 0:
         print(f"  Channel spread: avg=${valid_spreads.mean():.2f}, min=${valid_spreads.min():.2f}, max=${valid_spreads.max():.2f}")
 
     current_arr = np.array([current_weights.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
-    current_oos = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold,
-                           entry_bias=current_entry_bias)
+    current_result = simulate(df, mat, current_arr, spreads, current_threshold, -current_threshold,
+                              entry_bias=current_entry_bias)
 
     update_evolution_progress("evaluating", 50, "Evaluating current strategy...")
-    candidates = [{"weights": current_weights, "arr": current_arr, "oos": current_oos,
+    candidates = [{"weights": current_weights, "arr": current_arr, "result": current_result,
                    "threshold": current_threshold, "entry_bias": current_entry_bias, "label": "current"}]
     for i in range(n_mutations):
         update_evolution_progress("evaluating", 50 + int(40 * (i + 1) / n_mutations), f"Testing mutation {i+1}/{n_mutations}...")
@@ -753,31 +749,30 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
         w_arr = np.array([w_dict.get(n, 0.0) for n in SIGNAL_NAMES], dtype=np.float32)
         thr = mutate_threshold(current_threshold, sigma)
         bias = mutate_entry_bias(current_entry_bias, sigma)
-        oos = simulate(df_test, mat_test, w_arr, spreads_test, thr, -thr, entry_bias=bias)
-        candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "entry_bias": bias, "oos": oos, "label": f"mut#{i+1:02d}"})
+        result = simulate(df, mat, w_arr, spreads, thr, -thr, entry_bias=bias)
+        candidates.append({"weights": w_dict, "arr": w_arr, "threshold": thr, "entry_bias": bias, "result": result, "label": f"mut#{i+1:02d}"})
 
-    candidates.sort(key=lambda c: (c["oos"]["sharpe"], c["oos"]["return_pct"]), reverse=True)
+    candidates.sort(key=lambda c: (c["result"]["sharpe"], c["result"]["return_pct"]), reverse=True)
 
     print(f"\n  {'Rank':<6} {'Label':<10} {'Return':>8} {'Sharpe':>7} {'WR':>7} {'Trades':>7}")
     print(f"  {'-'*6} {'-'*10} {'-'*8} {'-'*7} {'-'*7} {'-'*7}")
     for rank, c in enumerate(candidates[:6], 1):
-        o = c["oos"]
+        r = c["result"]
         star = " *" if rank == 1 else ""
-        col = Fore.GREEN if o["return_pct"] >= 0 else Fore.RED
-        print(f"  {rank:<6} {c['label']:<10} {col}{o['return_pct']:>+7.2f}%{Style.RESET_ALL} "
-              f"{o['sharpe']:>7.2f} {o['win_rate']:>6.1f}% {o['num_trades']:>7}{star}")
+        col = Fore.GREEN if r["return_pct"] >= 0 else Fore.RED
+        print(f"  {rank:<6} {c['label']:<10} {col}{r['return_pct']:>+7.2f}%{Style.RESET_ALL} "
+              f"{r['sharpe']:>7.2f} {r['win_rate']:>6.1f}% {r['num_trades']:>7}{star}")
 
     best = candidates[0]
     evolution_duration = time.time() - evolution_start
 
     if best["label"] == "current":
         print(f"\n  {Fore.YELLOW}Current strategy is best — keeping v{version}.{Style.RESET_ALL}")
-        # Update performance metrics with current test results (includes fees now)
-        is_stats = simulate(df_train, mat_train, current_arr, spreads_train, current_threshold, -current_threshold, entry_bias=current_entry_bias)
-        oos_full = simulate(df_test, mat_test, current_arr, spreads_test, current_threshold, -current_threshold, record_trades=True, entry_bias=current_entry_bias, channel_infos=channel_infos_test)
+        # Re-run with record_trades=True for dashboard
+        full_result = simulate(df, mat, current_arr, spreads, current_threshold, -current_threshold,
+                               record_trades=True, entry_bias=current_entry_bias, channel_infos=channel_infos)
         update_performance(version, {
-            "in_sample": is_stats,
-            "out_of_sample": oos_full,
+            "out_of_sample": full_result,  # Now it's the full 5-week result
             "threshold": current_threshold,
             "entry_bias": current_entry_bias,
             "evolution_duration_sec": round(evolution_duration, 1),
@@ -789,8 +784,8 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
             symbol=symbol,
             version_before=version,
             version_after=None,
-            current_sharpe=current_oos["sharpe"],
-            best_sharpe=current_oos["sharpe"],
+            current_sharpe=current_result["sharpe"],
+            best_sharpe=current_result["sharpe"],
             mutations_tried=n_mutations,
             model_changed=False,
         )
@@ -798,13 +793,13 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
 
     best_thr = best["threshold"]
     best_bias = best["entry_bias"]
-    is_stats = simulate(df_train, mat_train, best["arr"], spreads_train, best_thr, -best_thr, entry_bias=best_bias)
-    best_oos_full = simulate(df_test, mat_test, best["arr"], spreads_test, best_thr, -best_thr, record_trades=True, entry_bias=best_bias, channel_infos=channel_infos_test)
+    best_full_result = simulate(df, mat, best["arr"], spreads, best_thr, -best_thr,
+                                record_trades=True, entry_bias=best_bias, channel_infos=channel_infos)
     new_version = version + 1
     save_weights(
         best["weights"],
         new_version,
-        {"in_sample": is_stats, "out_of_sample": best_oos_full,
+        {"out_of_sample": best_full_result,
          "evolved_from_version": version, "mutations_tried": n_mutations, "sigma": sigma,
          "threshold": best_thr,
          "entry_bias": best_bias,
@@ -816,13 +811,13 @@ def evolve_once(symbol: str, n_mutations: int = 2, sigma: float = 0.02) -> None:
         symbol=symbol,
         version_before=version,
         version_after=new_version,
-        current_sharpe=current_oos["sharpe"],
-        best_sharpe=best["oos"]["sharpe"],
+        current_sharpe=current_result["sharpe"],
+        best_sharpe=best["result"]["sharpe"],
         mutations_tried=n_mutations,
         model_changed=True,
     )
 
-    print(f"\n  {Fore.GREEN}Promoted v{new_version} (OOS sharpe {best['oos']['sharpe']:.2f}, return {best['oos']['return_pct']:+.2f}%, thr={best_thr:.3f}, bias={best_bias:.3f}):{Style.RESET_ALL}")
+    print(f"\n  {Fore.GREEN}Promoted v{new_version} (sharpe {best['result']['sharpe']:.2f}, return {best['result']['return_pct']:+.2f}%, thr={best_thr:.3f}, bias={best_bias:.3f}):{Style.RESET_ALL}")
     print(f"  {'Signal':<12} {'Old':>7} {'New':>7} {'Diff':>7}")
     print(f"  {'-'*12} {'-'*7} {'-'*7} {'-'*7}")
     for name in sorted(best["weights"], key=best["weights"].get, reverse=True):

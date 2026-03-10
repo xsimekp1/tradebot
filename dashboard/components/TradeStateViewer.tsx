@@ -74,24 +74,34 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     return `${(val * 100).toFixed(1)}%`;
   };
 
-  // Build chart data from price histories
+  // Build chart data from price histories with estimated timestamps
   const chartData = useMemo(() => {
     const openHist = pair.open.price_history || [];
     const closeHist = pair.close?.price_history || [];
+    const entryTime = new Date(pair.open.ts).getTime();
+    const exitTime = pair.close ? new Date(pair.close.ts).getTime() : entryTime;
+
+    // Each point = 5 bars * 2 min = 10 min apart
+    const POINT_INTERVAL_MS = 10 * 60 * 1000;
 
     // Combine: entry context (before entry) + trade duration (entry to exit)
-    const combined: { idx: number; price: number; phase: "before" | "during" }[] = [];
+    const combined: { idx: number; price: number; phase: "before" | "during"; ts: number }[] = [];
 
-    // Add entry context (3h before entry)
+    // Add entry context - work backwards from entry time
     openHist.forEach((p, i) => {
-      combined.push({ idx: i, price: p, phase: "before" });
+      const pointsBeforeEntry = openHist.length - 1 - i;
+      const ts = entryTime - (pointsBeforeEntry * POINT_INTERVAL_MS);
+      combined.push({ idx: i, price: p, phase: "before", ts });
     });
 
     // Add trade duration prices (if we have close data)
     if (closeHist.length > 0) {
       const offset = combined.length;
+      const tradeDuration = exitTime - entryTime;
+      const timePerPoint = closeHist.length > 1 ? tradeDuration / (closeHist.length - 1) : 0;
       closeHist.forEach((p, i) => {
-        combined.push({ idx: offset + i, price: p, phase: "during" });
+        const ts = entryTime + (i * timePerPoint);
+        combined.push({ idx: offset + i, price: p, phase: "during", ts });
       });
     }
 
@@ -107,16 +117,15 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       : pair.open.price + stopDist;
   }, [pair.open]);
 
-  // Find entry index in chart (where "before" phase ends)
-  const entryIdx = useMemo(() => {
-    const beforeCount = (pair.open.price_history || []).length;
-    return beforeCount > 0 ? beforeCount - 1 : 0;
+  // Find entry timestamp in chart (where "before" phase ends)
+  const entryTs = useMemo(() => {
+    return new Date(pair.open.ts).getTime();
   }, [pair.open]);
 
-  // Find exit index (end of chart)
-  const exitIdx = useMemo(() => {
-    return chartData.length > 0 ? chartData.length - 1 : 0;
-  }, [chartData]);
+  // Find exit timestamp (end of chart)
+  const exitTs = useMemo(() => {
+    return pair.close ? new Date(pair.close.ts).getTime() : entryTs;
+  }, [pair.close, entryTs]);
 
   const TradePanel = ({ trade, label }: { trade: TradeEntry; label: string }) => (
     <div className="bg-[#0f1117] rounded-lg p-3 flex-1">
@@ -208,8 +217,14 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       {/* Price chart with entry/exit/stop loss */}
       {chartData.length > 0 && (
         <div className="mb-4 bg-[#0f1117] rounded-lg p-2">
+          {/* Time range header */}
+          <div className="text-[10px] text-gray-500 text-center mb-1">
+            {new Date(chartData[0].ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+            {" — "}
+            {new Date(chartData[chartData.length - 1].ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
@@ -221,7 +236,20 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                 hide
                 padding={{ top: 10, bottom: 10 }}
               />
-              <XAxis dataKey="idx" hide />
+              <XAxis
+                dataKey="ts"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                tick={{ fill: "#6b7280", fontSize: 9 }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(ts) => {
+                  const d = new Date(ts);
+                  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                }}
+                interval="preserveStartEnd"
+                tickCount={5}
+              />
               <Tooltip
                 contentStyle={{
                   background: "#1a1d27",
@@ -230,7 +258,10 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
                   fontSize: 11
                 }}
                 formatter={(v: number) => [`$${v.toFixed(2)}`, "Price"]}
-                labelFormatter={() => ""}
+                labelFormatter={(ts) => {
+                  const d = new Date(ts as number);
+                  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                }}
               />
               {/* Entry price line */}
               <ReferenceLine
@@ -285,7 +316,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
               />
               {/* Vertical entry marker */}
               <ReferenceLine
-                x={entryIdx}
+                x={entryTs}
                 stroke="#10b981"
                 strokeWidth={2}
                 label={{ value: "▼", position: "top", fill: "#10b981", fontSize: 12 }}
@@ -293,7 +324,7 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
               {/* Vertical exit marker */}
               {pair.close && (
                 <ReferenceLine
-                  x={exitIdx}
+                  x={exitTs}
                   stroke="#f43f5e"
                   strokeWidth={2}
                   label={{ value: "▼", position: "top", fill: "#f43f5e", fontSize: 12 }}

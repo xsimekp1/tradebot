@@ -44,7 +44,8 @@
       "Bash(wmic process where \"name=''python.exe'' or name=''python3.exe''\" get processid,commandline)",
       "Bash(cmd.exe /c \"wmic process where \"\"name=''python.exe''\"\" get processid,commandline\")",
       "Bash(cmd.exe /c \"tasklist /FI \"\"IMAGENAME eq python.exe\"\" /V\")",
-      "Bash(powershell.exe:*)"
+      "Bash(powershell.exe:*)",
+      "Bash(powershell -Command \"Get-Process python* | Stop-Process -Force\")"
     ]
   }
 }
