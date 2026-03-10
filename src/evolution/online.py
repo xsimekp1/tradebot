@@ -21,13 +21,13 @@ SIGNAL_NAMES = [s.name for s in ALL_SIGNALS]
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 
-DEFAULT_THRESHOLD = 0.25  # Increased for more selective entries
-THRESHOLD_MIN = 0.15
-THRESHOLD_MAX = 0.35  # Prevent going too high (no trading)
+DEFAULT_THRESHOLD = 0.15
+THRESHOLD_MIN = 0.05
+THRESHOLD_MAX = 0.40
 
-DEFAULT_ENTRY_BIAS = 0.10  # Additional buffer for entry (adds to threshold)
+DEFAULT_ENTRY_BIAS = 0.03  # Start with small bias to compensate for fees
 ENTRY_BIAS_MIN = 0.0
-ENTRY_BIAS_MAX = 0.25
+ENTRY_BIAS_MAX = 0.15
 
 
 def _db_url() -> str:
