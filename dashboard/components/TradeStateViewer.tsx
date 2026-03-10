@@ -18,10 +18,11 @@ type TradeEntry = {
   pnl?: number;
   support?: number;
   resistance?: number;
+  support_slope?: number;
+  resistance_slope?: number;
   position_pct?: number;
   price_history?: number[];
-  support_history?: (number | null)[];
-  resistance_history?: (number | null)[];
+  entry_idx?: number;
 };
 
 export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
@@ -79,11 +80,16 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
   // Build chart data from price histories with estimated timestamps
   const chartData = useMemo(() => {
     const openHist = pair.open.price_history || [];
-    const openSupport = pair.open.support_history || [];
-    const openResistance = pair.open.resistance_history || [];
     const closeHist = pair.close?.price_history || [];
     const entryTime = new Date(pair.open.ts).getTime();
     const exitTime = pair.close ? new Date(pair.close.ts).getTime() : entryTime;
+
+    // S/R line parameters at entry (slopes are per 2-min bar, we sample every 5 bars)
+    const supportAtEntry = pair.open.support ?? 0;
+    const resistanceAtEntry = pair.open.resistance ?? 0;
+    const supportSlope = (pair.open.support_slope ?? 0) * 5;  // Per sampled point (5 bars)
+    const resistanceSlope = (pair.open.resistance_slope ?? 0) * 5;
+    const entryIdx = pair.open.entry_idx ?? (openHist.length - 1);
 
     // Each point = 5 bars * 2 min = 10 min apart
     const POINT_INTERVAL_MS = 10 * 60 * 1000;
@@ -91,15 +97,19 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
     // Combine: entry context (before entry) + trade duration (entry to exit)
     const combined: { idx: number; price: number; support?: number; resistance?: number; phase: "before" | "during"; ts: number }[] = [];
 
-    // Add entry context - work backwards from entry time
+    // Add entry context - work backwards from entry time, calculate S/R lines
     openHist.forEach((p, i) => {
       const pointsBeforeEntry = openHist.length - 1 - i;
       const ts = entryTime - (pointsBeforeEntry * POINT_INTERVAL_MS);
+      // Calculate S/R line values relative to entry point
+      const barsFromEntry = i - entryIdx;
+      const support = supportAtEntry > 0 ? supportAtEntry + supportSlope * barsFromEntry : undefined;
+      const resistance = resistanceAtEntry > 0 ? resistanceAtEntry + resistanceSlope * barsFromEntry : undefined;
       combined.push({
         idx: i,
         price: p,
-        support: openSupport[i] ?? undefined,
-        resistance: openResistance[i] ?? undefined,
+        support,
+        resistance,
         phase: "before",
         ts
       });
@@ -112,7 +122,11 @@ export function TradeStateViewer({ trades }: { trades: TradeEntry[] }) {
       const timePerPoint = closeHist.length > 1 ? tradeDuration / (closeHist.length - 1) : 0;
       closeHist.forEach((p, i) => {
         const ts = entryTime + (i * timePerPoint);
-        combined.push({ idx: offset + i, price: p, phase: "during", ts });
+        // Continue S/R lines during trade
+        const barsFromEntry = offset + i - entryIdx;
+        const support = supportAtEntry > 0 ? supportAtEntry + supportSlope * barsFromEntry : undefined;
+        const resistance = resistanceAtEntry > 0 ? resistanceAtEntry + resistanceSlope * barsFromEntry : undefined;
+        combined.push({ idx: offset + i, price: p, support, resistance, phase: "during", ts });
       });
     }
 

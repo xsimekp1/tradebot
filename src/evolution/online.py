@@ -525,14 +525,14 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         ci = channel_infos[i]
                         entry["support"] = round(ci.get("support_price", 0), 2)
                         entry["resistance"] = round(ci.get("resistance_price", 0), 2)
+                        entry["support_slope"] = ci.get("support_slope", 0)
+                        entry["resistance_slope"] = ci.get("resistance_slope", 0)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history with support/resistance curves (every 5th bar)
+                    # Add 3h price history (every 5th bar = 10 min intervals)
                     start_idx = max(0, i - 180)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
-                    if channel_infos:
-                        entry["support_history"] = [round(channel_infos[j].get("support_price", 0), 2) if channel_infos[j] else None for j in indices]
-                        entry["resistance_history"] = [round(channel_infos[j].get("resistance_price", 0), 2) if channel_infos[j] else None for j in indices]
+                    entry["entry_idx"] = len(indices) - 1  # Index of entry point in price_history
                     trades_log.append(entry)
             elif allow_short and score < entry_short_thr:
                 entry_fee = pos_size * fee_pct
@@ -546,14 +546,14 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                         ci = channel_infos[i]
                         entry["support"] = round(ci.get("support_price", 0), 2)
                         entry["resistance"] = round(ci.get("resistance_price", 0), 2)
+                        entry["support_slope"] = ci.get("support_slope", 0)
+                        entry["resistance_slope"] = ci.get("resistance_slope", 0)
                         entry["position_pct"] = round(ci.get("position_pct", 0.5), 2)
-                    # Add 3h price history with support/resistance curves (every 5th bar)
+                    # Add 3h price history (every 5th bar = 10 min intervals)
                     start_idx = max(0, i - 180)
                     indices = list(range(start_idx, i + 1, 5))
                     entry["price_history"] = [round(float(prices[j]), 2) for j in indices]
-                    if channel_infos:
-                        entry["support_history"] = [round(channel_infos[j].get("support_price", 0), 2) if channel_infos[j] else None for j in indices]
-                        entry["resistance_history"] = [round(channel_infos[j].get("resistance_price", 0), 2) if channel_infos[j] else None for j in indices]
+                    entry["entry_idx"] = len(indices) - 1  # Index of entry point in price_history
                     trades_log.append(entry)
         elif position["side"] == "long" and score < short_thr:
             exit_value = position["qty"] * price
