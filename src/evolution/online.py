@@ -474,7 +474,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     total_fees += exit_fee
                     trades.append(pnl)
                     if record_trades:
-                        close_entry = {"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                        close_entry = {"action": "close", "side": "long", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                         if channel_infos and channel_infos[i]:
                             ci = channel_infos[i]
                             close_entry["support"] = round(ci.get("support", 0), 2)
@@ -497,7 +497,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
                     total_fees += exit_fee
                     trades.append(pnl)
                     if record_trades:
-                        close_entry = {"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                        close_entry = {"action": "close", "side": "short", "close_reason": "stop_loss", "price": round(exit_price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                         if channel_infos and channel_infos[i]:
                             ci = channel_infos[i]
                             close_entry["support"] = round(ci.get("support", 0), 2)
@@ -543,7 +543,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                close_entry = {"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                close_entry = {"action": "close", "side": "long", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                 if channel_infos and channel_infos[i]:
                     ci = channel_infos[i]
                     close_entry["support"] = round(ci.get("support", 0), 2)
@@ -559,7 +559,7 @@ def simulate(df, mat: np.ndarray, weights_arr: np.ndarray,
             total_fees += exit_fee
             trades.append(pnl)
             if record_trades:
-                close_entry = {"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2)}
+                close_entry = {"action": "close", "side": "short", "close_reason": "signal", "price": round(price, 2), "ts": timestamps[i], "pnl": round(pnl, 2), "fee": round(exit_fee, 2), "score": round(score, 3)}
                 if channel_infos and channel_infos[i]:
                     ci = channel_infos[i]
                     close_entry["support"] = round(ci.get("support", 0), 2)
