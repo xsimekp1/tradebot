@@ -91,7 +91,10 @@ export function SignalEvolutionGrid({ rows }: { rows: WeightRow[] }) {
                     padding: "4px 8px",
                   }}
                   formatter={(v: number) => [`${(v * 100).toFixed(2)}%`, signal]}
-                  labelFormatter={(l) => l}
+                  labelFormatter={(_, payload) => {
+                    const item = payload?.[0]?.payload;
+                    return item?.v ?? "";
+                  }}
                 />
                 {data.length > 1 && (
                   <ReferenceLine
